@@ -11,4 +11,8 @@ for mode in --debug --release; do
     "$KAMA" build "$ROOT/tests/kama.json" $mode -o "$tmp/tests$mode"
     "$tmp/tests$mode"
 done
+# The example is a test too: the channel shape the package exists for, exit 0 end to end.
+"$KAMA" pkg install "$ROOT/examples/udp_channel/kama.json" >/dev/null
+"$KAMA" build "$ROOT/examples/udp_channel/kama.json" --release -o "$tmp/udp_channel"
+"$tmp/udp_channel"
 echo "test.sh: OK"

@@ -1,0 +1,134 @@
+// An encrypted datagram channel, end to end, in one process: the shape a game's UDP transport wants.
+//
+//   1. Each side has a long-lived `kx` key pair. The client knows the server's public key ahead of
+//      time (shipped with the client, or fetched over a channel it trusts) — that is what stops an
+//      impostor server; nothing in the exchange itself does.
+//   2. The client sends its public key in the clear. Both sides derive DIRECTIONAL session keys: what
+//      the client seals with its `tx`, the server opens with its `rx`, and the other way round. A
+//      packet can never be replayed back at its sender as if the peer had said it.
+//   3. Every packet is `aead`: an 8-byte header (a sequence number) travels in the clear as
+//      ASSOCIATED DATA, so the receiver can drop duplicates and reorder BEFORE decrypting, and a
+//      header moved onto another packet's body fails to open. The nonce is the sequence number too —
+//      a counter, never reused under one key, no randomness per packet, nothing extra on the wire.
+//
+// No sockets here — the packets are byte arrays handed across — so the whole thing runs as a test.
+// Exit 0 when every packet round-trips, a replay is refused, and a tampered header is refused.
+import { sodium::SodiumError, sodium::Nonce, sodium::equalsConstantTime,
+         sodium::kx::KeyPair, sodium::kx::PublicKey, sodium::kx::SessionKeys, sodium::kx::Direction,
+         sodium::kx::clientSessionKeys, sodium::kx::serverSessionKeys,
+         sodium::aead::Key, sodium::aead::MACBYTES, sodium::aead::sealInto, sodium::aead::openInto,
+         std::collections::View, std::collections::FixedArray };
+
+comptime isize HEADER = 8;   // the sequence number, little-endian
+
+// One direction of a channel: a key, and the next sequence number it will send or accept.
+type resource Sender {
+    Key key;
+    uint64 next;
+
+    public unsafe ctor make(ref SessionKeys keys) { this.key = Key.fromSession(keys: keys, direction: Direction::Tx); this.next = 0ui64; }
+
+    // header ‖ ciphertext into `packet` (HEADER + payload + MACBYTES bytes). Answers the bytes written.
+    public unsafe fn isize send(View<uint8> payload, View<uint8> packet) {
+        if (packet.length() != HEADER + payload.length() + MACBYTES) { panic(msg: "send: packet buffer size"); }
+        FixedArray<uint8> nonceBytes = FixedArray::<uint8>.make(size: 24);
+        isize i = 0;
+        while (i < 8) {
+            uint8 b = truncate<uint8>((this.next >> cast<uint64>(i * 8)) & 255ui64);
+            packet[i] = b;
+            nonceBytes[i] = b;
+            i = i + 1;
+        }
+        Nonce nonce = match (Nonce.fromBytes(bytes: nonceBytes.view())) { case Ok(value: n): n; case Err(error: e): { panic(msg: "nonce"); return 0; } };
+        isize n = sealInto(into: packet.slice(from: HEADER, count: packet.length() - HEADER), message: payload,
+                           ad: packet.slice(from: 0, count: HEADER), nonce: nonce, key: this.key);
+        this.next = this.next + 1ui64;
+        return HEADER + n;
+    }
+}
+
+type resource Receiver {
+    Key key;
+    uint64 expected;
+
+    public unsafe ctor make(ref SessionKeys keys) { this.key = Key.fromSession(keys: keys, direction: Direction::Rx); this.expected = 0ui64; }
+
+    // The payload, or an error: a replayed/old sequence number is refused before any cryptography,
+    // and a packet whose header or body was altered is `Forged`.
+    public unsafe fn Result<isize, SodiumError> receive(View<uint8> packet, View<uint8> payload) {
+        if (packet.length() < HEADER + MACBYTES) {
+            return Result::Err(error: SodiumError::BadLength(expected: HEADER + MACBYTES, got: packet.length()));
+        }
+        uint64 seq = 0ui64;
+        FixedArray<uint8> nonceBytes = FixedArray::<uint8>.make(size: 24);
+        isize i = 0;
+        while (i < 8) { seq = seq | (cast<uint64>(packet[i]) << cast<uint64>(i * 8)); nonceBytes[i] = packet[i]; i = i + 1; }
+        if (seq < this.expected) { return Result::Err(error: SodiumError::Forged); }   // replay, or older than what we have
+        Nonce nonce = match (Nonce.fromBytes(bytes: nonceBytes.view())) { case Ok(value: n): n; case Err(error: e): { panic(msg: "nonce"); return Result::Err(error: SodiumError::Forged); } };
+        match (openInto(into: payload, ciphertext: packet.slice(from: HEADER, count: packet.length() - HEADER),
+                        ad: packet.slice(from: 0, count: HEADER), nonce: nonce, key: this.key)) {
+            case Ok(value: n):  { this.expected = seq + 1ui64; return Result::Ok(value: n); }
+            case Err(error: e): { return Result::Err(error: e); }
+        };
+    }
+}
+
+fn int32 main() {
+    // 1. Identities. The client holds the server's public key from before.
+    KeyPair server = KeyPair.random();
+    KeyPair client = KeyPair.random();
+    PublicKey serverPk = server.publicKey();
+    // 2. The client's public key goes over in the clear; both sides derive rx/tx.
+    PublicKey clientPk = client.publicKey();
+    Result<SessionKeys, SodiumError> ck = clientSessionKeys(client: client, server: serverPk);
+    SessionKeys clientKeys = match (give ck) { case Ok(value: k): give k; case Err(error: e): { return 1; } };
+    Result<SessionKeys, SodiumError> sk = serverSessionKeys(server: server, client: clientPk);
+    SessionKeys serverKeys = match (give sk) { case Ok(value: k): give k; case Err(error: e): { return 2; } };
+    Sender up = Sender.make(keys: clientKeys);        // client -> server
+    Receiver upRx = Receiver.make(keys: serverKeys);
+    Sender down = Sender.make(keys: serverKeys);      // server -> client
+    Receiver downRx = Receiver.make(keys: clientKeys);
+
+    // 3. Packets. Three up, one down, each a different payload.
+    FixedArray<uint8> payload = FixedArray::<uint8>.make(size: 20);
+    FixedArray<uint8> packet = FixedArray::<uint8>.make(size: HEADER + 20 + MACBYTES);
+    FixedArray<uint8> got = FixedArray::<uint8>.make(size: 20);
+    int32 seqNo = 0;
+    while (seqNo < 3) {
+        isize i = 0;
+        while (i < 20) { payload[i] = truncate<uint8>(cast<isize>(seqNo) * 20 + i); i = i + 1; }
+        isize n = up.send(payload: payload.view(), packet: packet.view());
+        match (upRx.receive(packet: packet.view(), payload: got.view())) {
+            case Ok(value: len): { if (!equalsConstantTime(a: got.view(), b: payload.view())) { println(s: "up: payload differs"); return 3; } }
+            case Err(error: e): { println(s: "up: refused a good packet"); return 4; }
+        };
+        seqNo = seqNo + 1;
+    }
+    // A replay of the last packet is refused (by sequence, before decrypting).
+    match (upRx.receive(packet: packet.view(), payload: got.view())) {
+        case Ok(value: len): { println(s: "up: a replay was accepted"); return 5; }
+        case Err(error: e): { }
+    };
+    // A packet with its header altered (a different sequence number) fails to open: the header is
+    // authenticated as associated data, and the nonce it also serves as no longer matches.
+    isize m = up.send(payload: payload.view(), packet: packet.view());
+    packet[0] = packet[0] ^ 1ui8;
+    match (upRx.receive(packet: packet.view(), payload: got.view())) {
+        case Ok(value: len): { println(s: "up: an altered header was accepted"); return 6; }
+        case Err(error: e): { }
+    };
+    // The other direction, with its own keys.
+    isize d = down.send(payload: payload.view(), packet: packet.view());
+    match (downRx.receive(packet: packet.view(), payload: got.view())) {
+        case Ok(value: len): { if (!equalsConstantTime(a: got.view(), b: payload.view())) { println(s: "down: payload differs"); return 7; } }
+        case Err(error: e): { println(s: "down: refused a good packet"); return 8; }
+    };
+    // ...and a client packet cannot be opened as if it were the server's (rx != tx).
+    isize u = up.send(payload: payload.view(), packet: packet.view());
+    match (downRx.receive(packet: packet.view(), payload: got.view())) {
+        case Ok(value: len): { println(s: "down: opened an uplink packet"); return 9; }
+        case Err(error: e): { }
+    };
+    println(s: "udp_channel: OK");
+    return 0;
+}

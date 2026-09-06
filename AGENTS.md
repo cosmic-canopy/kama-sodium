@@ -153,3 +153,31 @@ In descending order of authority. Prefer running the compiler over reading any o
 - `<https://kama-lang.org/llms.txt>` — the machine-readable index of all of the above.
 
 If a doc and the compiler disagree, the compiler is right and the doc is a bug worth reporting.
+
+## This package — @kama/sodium
+
+What is true here and nowhere else, learned building it (the first external kama package):
+
+- **Run `tools/test.sh`** (`KAMA=/path/to/kama` if `kama` is not on the PATH). It builds `tests/`
+  debug and release; a failing case prints its name. Test vectors come from
+  `third_party/libsodium/../test/default` in the upstream tarball — never type one from memory; the
+  first attempt at the aead vector was wrong.
+- **`tools/vendor-libsodium.sh` owns `third_party/libsodium/` and the `csources` block of kama.json.**
+  Do not hand-edit either; change `VERSION`/`SHA256` in the script and run it.
+- **Every size is spelled twice on purpose:** a `comptime isize` in the module and a `_Static_assert`
+  in `csrc/kama_sodium.c`. Add both when binding a new primitive.
+- **Keys go by `ref`, pairs go whole.** No const raw pointer exists (`addr(of:)` on a const receiver is
+  refused), a `resource`'s fields are always private, and a `ref`-returning call cannot feed a `ref`
+  parameter — so operations take `ref KeyPair`, and `pair.publicKey()` is copied to a local before it
+  is passed anywhere.
+- **`zeroed()` constructors are public** because member visibility is per type, not per file/module,
+  and the free functions that fill them live outside the type.
+- **A module's names are module-wide even when not exported** — two files in `tests/src/` cannot both
+  declare a private `knownAnswer`; helpers are prefixed per file.
+- **Unwrapping a `Result`:** a value payload is copied out of a borrowing `match (r)`; a resource
+  payload leaves a consuming `match (give r)` by `give x`. A `Result` over a dtor-less resource needed
+  a compiler fix (kama 0.9.200) to be move-tracked at all.
+- **Reserved words that bit:** `out`, `short` (every C keyword is reserved). `print` is `print(s:)` /
+  `println(s:)`, and an interpolation hole takes an identifier with accessors, not a call.
+- **One `import { … };` per file**, and a module is imported by symbol (`std::encoding::hex::decode
+  as hexDecode`), never as a namespace.
