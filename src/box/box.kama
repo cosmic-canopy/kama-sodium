@@ -1,0 +1,206 @@
+import { sodium::SodiumError, sodium::Nonce, sodium::ready, std::collections::View, std::collections::FixedArray };
+export { PublicKey, SecretKey, KeyPair,
+         PUBLICKEYBYTES, SECRETKEYBYTES, MACBYTES, SEALBYTES, SEEDBYTES,
+         seal, open, sealInto, openInto, sealAnonymous, openAnonymous };
+
+// Public-key authenticated encryption: X25519 + XSalsa20-Poly1305 (`crypto_box_easy`). The sender
+// seals with the RECIPIENT's public key and its OWN secret key; the recipient opens with the sender's
+// public key and its own secret key. A box proves both who sealed it and that it was not altered — to
+// the recipient, who could have sealed it too (not a signature; that is `sodium::sign`).
+//
+// SEALED boxes (`sealAnonymous` / `openAnonymous`) drop the sender: an ephemeral key pair is made per
+// box and its public half rides in the ciphertext (SEALBYTES of overhead), so anyone can seal to a
+// public key and only the pair's holder can open, with no nonce to manage. The first packet of a
+// session to a server whose public key the client already has, before any exchange, is this shape.
+
+comptime isize PUBLICKEYBYTES = 32;   // crypto_box_PUBLICKEYBYTES, pinned in csrc/kama_sodium.c
+comptime isize SECRETKEYBYTES = 32;   // crypto_box_SECRETKEYBYTES
+comptime isize MACBYTES       = 16;   // crypto_box_MACBYTES
+comptime isize SEALBYTES      = 48;   // crypto_box_SEALBYTES
+comptime isize SEEDBYTES      = 32;   // crypto_box_SEEDBYTES
+
+extern "kama_sodium.h";
+extern fn int32 crypto_box_keypair(UnsafePtr<uint8> pk, UnsafePtr<uint8> sk);
+extern fn int32 crypto_box_seed_keypair(UnsafePtr<uint8> pk, UnsafePtr<uint8> sk, UnsafePtr<uint8> seed);
+extern fn int32 crypto_box_easy(UnsafePtr<uint8> c, UnsafePtr<uint8> m, uint64 mlen, UnsafePtr<uint8> n,
+                                UnsafePtr<uint8> pk, UnsafePtr<uint8> sk);
+extern fn int32 crypto_box_open_easy(UnsafePtr<uint8> m, UnsafePtr<uint8> c, uint64 clen, UnsafePtr<uint8> n,
+                                     UnsafePtr<uint8> pk, UnsafePtr<uint8> sk);
+extern fn int32 crypto_box_seal(UnsafePtr<uint8> c, UnsafePtr<uint8> m, uint64 mlen, UnsafePtr<uint8> pk);
+extern fn int32 crypto_box_seal_open(UnsafePtr<uint8> m, UnsafePtr<uint8> c, uint64 clen, UnsafePtr<uint8> pk, UnsafePtr<uint8> sk);
+extern fn void  sodium_memzero(UnsafePtr<uint8> pnt, usize len);
+extern fn int32 crypto_scalarmult_base(UnsafePtr<uint8> q, UnsafePtr<uint8> n);
+
+type value PublicKey {
+    InlineArray<uint8>#(32) bytes;
+
+    // All-zero bytes, to be filled. Public because kama's member visibility is per TYPE (there is no
+    // module-internal tier), and the functions that fill it live outside the type; every path that
+    // mints one fills it before it leaves.
+    public ctor zeroed() { this.bytes = [0; 32]; }
+
+    public unsafe ctor Result<PublicKey, SodiumError> fromBytes(View<uint8> bytes) {
+        if (bytes.length() != PUBLICKEYBYTES) {
+            return Result::Err(error: SodiumError::BadLength(expected: PUBLICKEYBYTES, got: bytes.length()));
+        }
+        PublicKey k = PublicKey.zeroed();
+        isize i = 0;
+        while (i < PUBLICKEYBYTES) { k.bytes[cast<usize>(i)] = bytes[i]; i = i + 1; }
+        return Result::Ok(value: k);
+    }
+
+    public unsafe fn void exportTo(View<uint8> into) {
+        if (into.length() != PUBLICKEYBYTES) { panic(msg: "box::PublicKey.exportTo: the buffer is not PUBLICKEYBYTES long"); }
+        isize i = 0;
+        while (i < PUBLICKEYBYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
+    }
+
+    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+}
+
+type resource SecretKey {
+    InlineArray<uint8>#(32) bytes;
+
+    // All-zero bytes, to be filled. Public because kama's member visibility is per TYPE (there is no
+    // module-internal tier), and the functions that fill it live outside the type; every path that
+    // mints one fills it before it leaves.
+    public ctor zeroed() { this.bytes = [0; 32]; }
+
+    public unsafe ctor Result<SecretKey, SodiumError> fromBytes(View<uint8> bytes) {
+        if (bytes.length() != SECRETKEYBYTES) {
+            return Result::Err(error: SodiumError::BadLength(expected: SECRETKEYBYTES, got: bytes.length()));
+        }
+        SecretKey k = SecretKey.zeroed();
+        isize i = 0;
+        while (i < SECRETKEYBYTES) { k.bytes[cast<usize>(i)] = bytes[i]; i = i + 1; }
+        return Result::Ok(value: k);
+    }
+
+    public unsafe fn void exportTo(View<uint8> into) {
+        if (into.length() != SECRETKEYBYTES) { panic(msg: "box::SecretKey.exportTo: the buffer is not SECRETKEYBYTES long"); }
+        isize i = 0;
+        while (i < SECRETKEYBYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
+    }
+
+    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+
+    unsafe ~SecretKey() { sodium_memzero(pnt: this.bytes.dataPtr(), len: cast<usize>(SECRETKEYBYTES)); }
+}
+
+type resource KeyPair {
+    // A field of a `resource` is always private in kama, and a `ref`-returning accessor cannot feed a
+    // `ref` parameter (a call result is a temporary). So the operations take the PAIR by `ref`, the
+    // public half is read out as a value (`PublicKey pk = pair.publicKey();` — what goes on the wire),
+    // and the secret half never leaves except through `exportSecretKeyTo`, for storage.
+    PublicKey pk;
+    SecretKey sk;
+
+    public fn ref PublicKey publicKey() { return this.pk; }
+
+    // For the module's own operations (a free function cannot read a private field, even in this file).
+    public unsafe fn UnsafePtr<uint8> rawPublicKey() { return this.pk.raw(); }
+    public unsafe fn UnsafePtr<uint8> rawSecretKey() { return this.sk.raw(); }
+
+    public unsafe fn void exportSecretKeyTo(View<uint8> into) { this.sk.exportTo(into: into); }
+
+    // Rebuild the pair from a stored secret key: the public half is derived.
+    public unsafe ctor fromSecretKey(SecretKey secretKey) {
+        ready();
+        this.pk = PublicKey.zeroed();
+        this.sk = give secretKey;
+        int32 rc = crypto_scalarmult_base(q: this.pk.raw(), n: this.sk.raw());
+    }
+
+
+    public unsafe ctor random() {
+        ready();
+        this.pk = PublicKey.zeroed();
+        this.sk = SecretKey.zeroed();
+        int32 rc = crypto_box_keypair(pk: this.pk.raw(), sk: this.sk.raw());
+    }
+
+    public unsafe ctor Result<KeyPair, SodiumError> fromSeed(View<uint8> seed) {
+        if (seed.length() != SEEDBYTES) {
+            return Result::Err(error: SodiumError::BadLength(expected: SEEDBYTES, got: seed.length()));
+        }
+        ready();
+        KeyPair p = KeyPair.random();
+        int32 rc = crypto_box_seed_keypair(pk: p.pk.raw(), sk: p.sk.raw(), seed: addr(of: seed[0]));
+        return Result::Ok(value: p);
+    }
+}
+
+// Seal `message` for `to`, from the holder of the pair `from`, into `into` (exactly message.length() +
+// MACBYTES). The sender is identified by its pair; the recipient by its public key, a value received.
+unsafe fn isize sealInto(View<uint8> into, View<uint8> message, ref Nonce nonce, ref PublicKey to, ref KeyPair from) {
+    ready();
+    if (into.length() != message.length() + MACBYTES) {
+        panic(msg: "box::sealInto: `into` must be message.length() + MACBYTES");
+    }
+    UnsafePtr<uint8> m = message.length() == 0 ? addr(of: into[0]) : addr(of: message[0]);
+    int32 rc = crypto_box_easy(c: addr(of: into[0]), m: m, mlen: cast<uint64>(message.length()),
+                               n: nonce.raw(), pk: to.raw(), sk: from.rawSecretKey());
+    if (rc != 0) { panic(msg: "box::sealInto: crypto_box_easy failed"); }
+    return into.length();
+}
+
+// Open a box sealed by the holder of the public key `from` for the holder of the pair `to`, into `into`
+// (exactly ciphertext.length() - MACBYTES). `Err(Forged)` if it was not, or was altered since.
+unsafe fn Result<isize, SodiumError> openInto(View<uint8> into, View<uint8> ciphertext, ref Nonce nonce,
+                                              ref PublicKey from, ref KeyPair to) {
+    ready();
+    if (ciphertext.length() < MACBYTES) {
+        return Result::Err(error: SodiumError::BadLength(expected: MACBYTES, got: ciphertext.length()));
+    }
+    isize plain = ciphertext.length() - MACBYTES;
+    if (into.length() != plain) {
+        panic(msg: "box::openInto: `into` must be ciphertext.length() - MACBYTES");
+    }
+    UnsafePtr<uint8> m = plain == 0 ? addr(of: ciphertext[0]) : addr(of: into[0]);
+    int32 rc = crypto_box_open_easy(m: m, c: addr(of: ciphertext[0]), clen: cast<uint64>(ciphertext.length()),
+                                    n: nonce.raw(), pk: from.raw(), sk: to.rawSecretKey());
+    if (rc != 0) { return Result::Err(error: SodiumError::Forged); }
+    return Result::Ok(value: plain);
+}
+
+unsafe fn FixedArray<uint8> seal(View<uint8> message, ref Nonce nonce, ref PublicKey to, ref KeyPair from) {
+    FixedArray<uint8> buf = FixedArray::<uint8>.make(size: message.length() + MACBYTES);
+    isize n = sealInto(into: buf.view(), message: message, nonce: nonce, to: to, from: from);
+    return buf;
+}
+
+unsafe fn Result<FixedArray<uint8>, SodiumError> open(View<uint8> ciphertext, ref Nonce nonce, ref PublicKey from, ref KeyPair to) {
+    if (ciphertext.length() < MACBYTES) {
+        return Result::Err(error: SodiumError::BadLength(expected: MACBYTES, got: ciphertext.length()));
+    }
+    FixedArray<uint8> buf = FixedArray::<uint8>.make(size: ciphertext.length() - MACBYTES);
+    match (openInto(into: buf.view(), ciphertext: ciphertext, nonce: nonce, from: from, to: to)) {
+        case Ok(value: n):  { return Result::Ok(value: buf); }
+        case Err(error: e): { return Result::Err(error: e); }
+    };
+}
+
+// A sealed box: for `to`, from nobody in particular. SEALBYTES longer than the message; no nonce.
+unsafe fn FixedArray<uint8> sealAnonymous(View<uint8> message, ref PublicKey to) {
+    ready();
+    FixedArray<uint8> buf = FixedArray::<uint8>.make(size: message.length() + SEALBYTES);
+    UnsafePtr<uint8> m = message.length() == 0 ? addr(of: buf[0]) : addr(of: message[0]);
+    int32 rc = crypto_box_seal(c: addr(of: buf[0]), m: m, mlen: cast<uint64>(message.length()), pk: to.raw());
+    if (rc != 0) { panic(msg: "box::sealAnonymous: crypto_box_seal failed"); }
+    return buf;
+}
+
+// Open a sealed box with the pair it was sealed to. `Err(Forged)` for any other pair or an altered box.
+unsafe fn Result<FixedArray<uint8>, SodiumError> openAnonymous(View<uint8> ciphertext, ref KeyPair to) {
+    ready();
+    if (ciphertext.length() < SEALBYTES) {
+        return Result::Err(error: SodiumError::BadLength(expected: SEALBYTES, got: ciphertext.length()));
+    }
+    isize plain = ciphertext.length() - SEALBYTES;
+    FixedArray<uint8> buf = FixedArray::<uint8>.make(size: plain);
+    UnsafePtr<uint8> m = plain == 0 ? addr(of: ciphertext[0]) : addr(of: buf[0]);
+    int32 rc = crypto_box_seal_open(m: m, c: addr(of: ciphertext[0]), clen: cast<uint64>(ciphertext.length()),
+                                    pk: to.rawPublicKey(), sk: to.rawSecretKey());
+    if (rc != 0) { return Result::Err(error: SodiumError::Forged); }
+    return Result::Ok(value: buf);
+}

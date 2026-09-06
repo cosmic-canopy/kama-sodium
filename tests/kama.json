@@ -1,0 +1,8 @@
+{
+  "name": "sodium_tests",
+  "version": "0.1.0",
+  "kind": "executable",
+  "entry": "src/main.kama",
+  "dependencies": { "@kama/sodium": { "path": ".." } },
+  "modules": { ".": { "visibility": "internal" } }
+}

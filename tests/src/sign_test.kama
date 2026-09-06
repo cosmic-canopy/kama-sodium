@@ -1,0 +1,76 @@
+import { sodium::SodiumError, sodium::equalsConstantTime,
+         sodium::sign::PublicKey, sodium::sign::SecretKey, sodium::sign::KeyPair, sodium::sign::Signature,
+         sodium::sign::PUBLICKEYBYTES, sodium::sign::SECRETKEYBYTES, sodium::sign::BYTES, sodium::sign::SEEDBYTES,
+         sodium::sign::sign, sodium::sign::verify,
+         sodium_tests::check, sodium_tests::unhex,
+         std::collections::View, std::collections::FixedArray, std::collections::DynamicArray };
+export { signTests };
+
+fn int32 signKnownAnswer() {
+    // RFC 8032 § 7.1, test 2: seed, public key, a one-byte message, its signature.
+    DynamicArray<uint8> seed = unhex(text: "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb");
+    DynamicArray<uint8> pkb  = unhex(text: "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c");
+    DynamicArray<uint8> msg  = unhex(text: "72");
+    DynamicArray<uint8> sigb = unhex(text: "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00");
+    int32 f = 0;
+    match (KeyPair.fromSeed(seed: seed.view())) {
+        case Ok(value: pair): {
+            FixedArray<uint8> pk = FixedArray::<uint8>.make(size: 32);
+            pair.publicKey().exportTo(into: pk.view());
+            f = f + check(ok: equalsConstantTime(a: pk.view(), b: pkb.view()), what: "sign: RFC 8032 public key from seed");
+            Signature s = sign(message: msg.view(), key: pair);
+            PublicKey pairPk = pair.publicKey();
+            FixedArray<uint8> sb = FixedArray::<uint8>.make(size: 64);
+            s.exportTo(into: sb.view());
+            f = f + check(ok: equalsConstantTime(a: sb.view(), b: sigb.view()), what: "sign: RFC 8032 signature");
+            f = f + check(ok: verify(signature: s, message: msg.view(), key: pairPk), what: "sign: RFC 8032 signature verifies");
+        }
+        case Err(error: e): { f = f + check(ok: false, what: "sign: fromSeed"); }
+    };
+    return f;
+}
+
+fn int32 signTests() {
+    int32 f = 0;
+    f = f + check(ok: PUBLICKEYBYTES == 32 && SECRETKEYBYTES == 64 && BYTES == 64 && SEEDBYTES == 32, what: "sign: sizes");
+    f = f + signKnownAnswer();
+
+    KeyPair signer = KeyPair.random();
+    KeyPair other = KeyPair.random();
+    FixedArray<uint8> msg = FixedArray::<uint8>.make(size: 100);
+    isize i = 0;
+    while (i < 100) { msg[i] = truncate<uint8>(i * 5); i = i + 1; }
+
+    PublicKey signerPk = signer.publicKey();
+    PublicKey otherPk = other.publicKey();
+    Signature s = sign(message: msg.view(), key: signer);
+    f = f + check(ok: verify(signature: s, message: msg.view(), key: signerPk), what: "sign: a signature verifies");
+    f = f + check(ok: !verify(signature: s, message: msg.view(), key: otherPk), what: "sign: another key does not verify");
+    msg[7] = msg[7] ^ 1ui8;
+    f = f + check(ok: !verify(signature: s, message: msg.view(), key: signerPk), what: "sign: an altered message does not verify");
+    msg[7] = msg[7] ^ 1ui8;
+    FixedArray<uint8> sb = FixedArray::<uint8>.make(size: 64);
+    s.exportTo(into: sb.view());
+    sb[0] = sb[0] ^ 1ui8;
+    match (Signature.fromBytes(bytes: sb.view())) {
+        case Ok(value: s2):  { f = f + check(ok: !verify(signature: s2, message: msg.view(), key: signerPk), what: "sign: an altered signature does not verify"); }
+        case Err(error: e): { f = f + check(ok: false, what: "sign: Signature.fromBytes"); }
+    };
+    // Deterministic, and an empty message signs too.
+    Signature again = sign(message: msg.view(), key: signer);
+    FixedArray<uint8> sa = FixedArray::<uint8>.make(size: 64);
+    FixedArray<uint8> sc = FixedArray::<uint8>.make(size: 64);
+    s.exportTo(into: sa.view());
+    again.exportTo(into: sc.view());
+    f = f + check(ok: equalsConstantTime(a: sa.view(), b: sc.view()), what: "sign: signing is deterministic");
+    FixedArray<uint8> empty = FixedArray::<uint8>.make(size: 0);
+    Signature se = sign(message: empty.view(), key: signer);
+    f = f + check(ok: verify(signature: se, message: empty.view(), key: signerPk), what: "sign: an empty message signs and verifies");
+    // A short key is BadLength.
+    FixedArray<uint8> tiny = FixedArray::<uint8>.make(size: 5);
+    match (PublicKey.fromBytes(bytes: tiny.view())) {
+        case Ok(value: k):   { f = f + check(ok: false, what: "sign: a 5-byte public key was accepted"); }
+        case Err(error: e): { f = f + check(ok: true, what: ""); }
+    };
+    return f;
+}

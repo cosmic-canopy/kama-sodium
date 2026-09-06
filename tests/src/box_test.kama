@@ -1,0 +1,98 @@
+import { sodium::SodiumError, sodium::Nonce, sodium::equalsConstantTime,
+         sodium::box::PublicKey, sodium::box::SecretKey, sodium::box::KeyPair,
+         sodium::box::PUBLICKEYBYTES, sodium::box::SECRETKEYBYTES, sodium::box::MACBYTES, sodium::box::SEALBYTES,
+         sodium::box::seal, sodium::box::open, sodium::box::sealInto, sodium::box::openInto,
+         sodium::box::sealAnonymous, sodium::box::openAnonymous,
+         sodium_tests::check, sodium_tests::unhex, sodium_tests::isForged, sodium_tests::isBadLength,
+         std::collections::View, std::collections::FixedArray, std::collections::DynamicArray };
+export { boxTests };
+
+fn int32 boxKnownAnswer() {
+    // libsodium's own vector (test/default/box_easy.c): alice's sk, bob's pk, nonce, m -> c.
+    DynamicArray<uint8> ask = unhex(text: "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
+    DynamicArray<uint8> bpk = unhex(text: "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f");
+    DynamicArray<uint8> nb  = unhex(text: "69696ee955b62b73cd62bda875fc73d68219e0036b7a0b37");
+    DynamicArray<uint8> mb  = unhex(text: "be075fc53c81f2d5cf141316ebeb0c7b5228c52a4c62cbd44b66849b64244ffce5ecbaaf33bd751a1ac728d45e6c61296cdc3c01233561f41db66cce314adb310e3be8250c46f06dceea3a7fa1348057e2f6556ad6b1318a024a838f21af1fde048977eb48f59ffd4924ca1c60902e52f0a089bc76897040e082f937763848645e0705");
+    DynamicArray<uint8> cb  = unhex(text: "f3ffc7703f9400e52a7dfb4b3d3305d98e993b9f48681273c29650ba32fc76ce48332ea7164d96a4476fb8c531a1186ac0dfc17c98dce87b4da7f011ec48c97271d2c20f9b928fe2270d6fb863d51738b48eeee314a7cc8ab932164548e526ae90224368517acfeabd6bb3732bc0e9da99832b61ca01b6de56244a9e88d5f9b37973f622a43d14a6599b1f654cb45a74e355a5");
+    int32 f = 0;
+    Result<Nonce, SodiumError> nr = Nonce.fromBytes(bytes: nb.view());
+    Nonce nonce = match (nr) { case Ok(value: n): n; case Err(error: e): { panic(msg: "vector nonce"); return 1; } };
+    Result<PublicKey, SodiumError> pr = PublicKey.fromBytes(bytes: bpk.view());
+    PublicKey bob = match (pr) { case Ok(value: k): k; case Err(error: e): { panic(msg: "vector pk"); return 1; } };
+    Result<SecretKey, SodiumError> sr = SecretKey.fromBytes(bytes: ask.view());
+    SecretKey aliceSk = match (give sr) { case Ok(value: k): give k; case Err(error: e): { panic(msg: "vector sk"); return 1; } };
+    KeyPair alice = KeyPair.fromSecretKey(secretKey: give aliceSk);
+    FixedArray<uint8> sealed = seal(message: mb.view(), nonce: nonce, to: bob, from: alice);
+    f = f + check(ok: equalsConstantTime(a: sealed.view(), b: cb.view()), what: "box: known-answer ciphertext");
+    return f;
+}
+
+fn int32 boxTests() {
+    int32 f = 0;
+    f = f + check(ok: PUBLICKEYBYTES == 32 && SECRETKEYBYTES == 32 && MACBYTES == 16 && SEALBYTES == 48, what: "box: sizes");
+    f = f + boxKnownAnswer();
+
+    KeyPair alice = KeyPair.random();
+    KeyPair bob = KeyPair.random();
+    KeyPair eve = KeyPair.random();
+    Nonce nonce = Nonce.random();
+    // What travels: each side's PUBLIC key, as a value.
+    PublicKey alicePk = alice.publicKey();
+    PublicKey bobPk = bob.publicKey();
+    PublicKey evePk = eve.publicKey();
+    FixedArray<uint8> msg = FixedArray::<uint8>.make(size: 40);
+    isize i = 0;
+    while (i < 40) { msg[i] = truncate<uint8>(i + 1); i = i + 1; }
+
+    // Alice to Bob; Bob opens with Alice's public key. Eve cannot, and Bob cannot pretend it came from Eve.
+    FixedArray<uint8> boxed = seal(message: msg.view(), nonce: nonce, to: bobPk, from: alice);
+    f = f + check(ok: boxed.length() == 56, what: "box: sealed length is message + MACBYTES");
+    match (open(ciphertext: boxed.view(), nonce: nonce, from: alicePk, to: bob)) {
+        case Ok(value: p):  { f = f + check(ok: equalsConstantTime(a: p.view(), b: msg.view()), what: "box: round trip"); }
+        case Err(error: e): { f = f + check(ok: false, what: "box: round trip open failed"); }
+    };
+    f = f + check(ok: isForged(r: open(ciphertext: boxed.view(), nonce: nonce, from: alicePk, to: eve)), what: "box: another recipient is Forged");
+    f = f + check(ok: isForged(r: open(ciphertext: boxed.view(), nonce: nonce, from: evePk, to: bob)), what: "box: another claimed sender is Forged");
+    boxed[20] = boxed[20] ^ 1ui8;
+    f = f + check(ok: isForged(r: open(ciphertext: boxed.view(), nonce: nonce, from: alicePk, to: bob)), what: "box: an altered box is Forged");
+    boxed[20] = boxed[20] ^ 1ui8;
+    FixedArray<uint8> tiny = FixedArray::<uint8>.make(size: 2);
+    f = f + check(ok: isBadLength(r: open(ciphertext: tiny.view(), nonce: nonce, from: alicePk, to: bob), expected: 16, got: 2), what: "box: a 2-byte box is BadLength(16, 2)");
+
+    // The `into` forms.
+    FixedArray<uint8> outBuf = FixedArray::<uint8>.make(size: 56);
+    isize wrote = sealInto(into: outBuf.view(), message: msg.view(), nonce: nonce, to: bobPk, from: alice);
+    f = f + check(ok: wrote == 56 && equalsConstantTime(a: outBuf.view(), b: boxed.view()), what: "box: sealInto matches seal");
+    FixedArray<uint8> plainBuf = FixedArray::<uint8>.make(size: 40);
+    match (openInto(into: plainBuf.view(), ciphertext: outBuf.view(), nonce: nonce, from: alicePk, to: bob)) {
+        case Ok(value: n):  { f = f + check(ok: n == 40 && equalsConstantTime(a: plainBuf.view(), b: msg.view()), what: "box: openInto round trip"); }
+        case Err(error: e): { f = f + check(ok: false, what: "box: openInto failed"); }
+    };
+
+    // Sealed boxes: anyone to Bob, only Bob's pair opens, and no nonce.
+    FixedArray<uint8> anon = sealAnonymous(message: msg.view(), to: bobPk);
+    f = f + check(ok: anon.length() == 88, what: "box: a sealed box is message + SEALBYTES");
+    match (openAnonymous(ciphertext: anon.view(), to: bob)) {
+        case Ok(value: p):  { f = f + check(ok: equalsConstantTime(a: p.view(), b: msg.view()), what: "box: sealed box round trip"); }
+        case Err(error: e): { f = f + check(ok: false, what: "box: sealed box open failed"); }
+    };
+    f = f + check(ok: isForged(r: openAnonymous(ciphertext: anon.view(), to: eve)), what: "box: a sealed box for Bob is Forged for Eve");
+    f = f + check(ok: isBadLength(r: openAnonymous(ciphertext: tiny.view(), to: bob), expected: 48, got: 2), what: "box: a 2-byte sealed box is BadLength(48, 2)");
+
+    // A seeded pair is deterministic.
+    FixedArray<uint8> seed = FixedArray::<uint8>.make(size: 32);
+    i = 0;
+    while (i < 32) { seed[i] = truncate<uint8>(i); i = i + 1; }
+    FixedArray<uint8> pk1 = FixedArray::<uint8>.make(size: 32);
+    FixedArray<uint8> pk2 = FixedArray::<uint8>.make(size: 32);
+    match (KeyPair.fromSeed(seed: seed.view())) {
+        case Ok(value: p):  { p.publicKey().exportTo(into: pk1.view()); }
+        case Err(error: e): { f = f + check(ok: false, what: "box: fromSeed"); }
+    };
+    match (KeyPair.fromSeed(seed: seed.view())) {
+        case Ok(value: p):  { p.publicKey().exportTo(into: pk2.view()); }
+        case Err(error: e): { f = f + check(ok: false, what: "box: fromSeed again"); }
+    };
+    f = f + check(ok: equalsConstantTime(a: pk1.view(), b: pk2.view()), what: "box: the same seed gives the same pair");
+    return f;
+}

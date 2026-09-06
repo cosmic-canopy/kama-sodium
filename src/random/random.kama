@@ -1,0 +1,34 @@
+import { sodium::ready, std::collections::View };
+export { fill, uniform, word };
+
+// libsodium's CSPRNG — the generator every key and nonce in this package comes from, offered directly
+// for the bytes a protocol needs that are not one of those: a session id, a token, a salt, a challenge.
+// The OS entropy source underneath (getrandom / getentropy / arc4random / the web crypto API on wasm),
+// the same one `std::random::entropy` reads; here because a program using this package should have one
+// answer for "random bytes for a secret", not two.
+//
+// Not a seeded generator: for a replayable stream (a game's match seed) `std::random::Rng` is the tool.
+
+extern "kama_sodium.h";
+extern fn void   randombytes_buf(UnsafePtr<uint8> buf, usize size);
+extern fn uint32 randombytes_uniform(uint32 upper_bound);
+extern fn uint32 randombytes_random();
+
+// Fill the buffer with unpredictable bytes.
+unsafe fn void fill(View<uint8> into) {
+    ready();
+    if (into.length() == 0) { return; }
+    randombytes_buf(buf: addr(of: into[0]), size: cast<usize>(into.length()));
+}
+
+// A value in [0, upperBound), unbiased (rejection sampling, not a modulo). `upperBound` 0 answers 0.
+unsafe fn uint32 uniform(uint32 upperBound) {
+    ready();
+    return randombytes_uniform(upper_bound: upperBound);
+}
+
+// One unpredictable 32-bit word.
+unsafe fn uint32 word() {
+    ready();
+    return randombytes_random();
+}

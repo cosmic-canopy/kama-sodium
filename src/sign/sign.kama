@@ -1,0 +1,168 @@
+import { sodium::SodiumError, sodium::ready, std::collections::View };
+export { PublicKey, SecretKey, KeyPair, Signature,
+         PUBLICKEYBYTES, SECRETKEYBYTES, BYTES, SEEDBYTES, sign, verify };
+
+// Ed25519 detached signatures. A `KeyPair` signs; anyone holding the `PublicKey` verifies. The
+// signature is separate from the message (64 bytes, a value), so a signed message is the message plus
+// a `Signature` beside it — the shape a protocol frame or a manifest wants.
+//
+// `verify` answers `bool`: it produces no data, so there is nothing for a `Result` to carry, and the
+// only failure IS "no". A signature is public and copies freely; it is not a secret.
+
+comptime isize PUBLICKEYBYTES = 32;   // crypto_sign_PUBLICKEYBYTES, pinned in csrc/kama_sodium.c
+comptime isize SECRETKEYBYTES = 64;   // crypto_sign_SECRETKEYBYTES
+comptime isize BYTES          = 64;   // crypto_sign_BYTES
+comptime isize SEEDBYTES      = 32;   // crypto_sign_SEEDBYTES
+
+extern "kama_sodium.h";
+extern fn int32 crypto_sign_keypair(UnsafePtr<uint8> pk, UnsafePtr<uint8> sk);
+extern fn int32 crypto_sign_seed_keypair(UnsafePtr<uint8> pk, UnsafePtr<uint8> sk, UnsafePtr<uint8> seed);
+extern fn int32 kama_sodium_sign_detached(UnsafePtr<uint8> sig, UnsafePtr<uint8> m, uint64 mlen, UnsafePtr<uint8> sk);
+extern fn int32 crypto_sign_verify_detached(UnsafePtr<uint8> sig, UnsafePtr<uint8> m, uint64 mlen, UnsafePtr<uint8> pk);
+extern fn void  sodium_memzero(UnsafePtr<uint8> pnt, usize len);
+extern fn int32 crypto_sign_ed25519_sk_to_pk(UnsafePtr<uint8> pk, UnsafePtr<uint8> sk);
+
+type value PublicKey {
+    InlineArray<uint8>#(32) bytes;
+
+    // All-zero bytes, to be filled. Public because kama's member visibility is per TYPE (there is no
+    // module-internal tier), and the functions that fill it live outside the type; every path that
+    // mints one fills it before it leaves.
+    public ctor zeroed() { this.bytes = [0; 32]; }
+
+    public unsafe ctor Result<PublicKey, SodiumError> fromBytes(View<uint8> bytes) {
+        if (bytes.length() != PUBLICKEYBYTES) {
+            return Result::Err(error: SodiumError::BadLength(expected: PUBLICKEYBYTES, got: bytes.length()));
+        }
+        PublicKey k = PublicKey.zeroed();
+        isize i = 0;
+        while (i < PUBLICKEYBYTES) { k.bytes[cast<usize>(i)] = bytes[i]; i = i + 1; }
+        return Result::Ok(value: k);
+    }
+
+    public unsafe fn void exportTo(View<uint8> into) {
+        if (into.length() != PUBLICKEYBYTES) { panic(msg: "sign::PublicKey.exportTo: the buffer is not PUBLICKEYBYTES long"); }
+        isize i = 0;
+        while (i < PUBLICKEYBYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
+    }
+
+    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+}
+
+// 64 bytes: the seed and the public key, as libsodium lays it out.
+type resource SecretKey {
+    InlineArray<uint8>#(64) bytes;
+
+    // All-zero bytes, to be filled. Public because kama's member visibility is per TYPE (there is no
+    // module-internal tier), and the functions that fill it live outside the type; every path that
+    // mints one fills it before it leaves.
+    public ctor zeroed() { this.bytes = [0; 64]; }
+
+    public unsafe ctor Result<SecretKey, SodiumError> fromBytes(View<uint8> bytes) {
+        if (bytes.length() != SECRETKEYBYTES) {
+            return Result::Err(error: SodiumError::BadLength(expected: SECRETKEYBYTES, got: bytes.length()));
+        }
+        SecretKey k = SecretKey.zeroed();
+        isize i = 0;
+        while (i < SECRETKEYBYTES) { k.bytes[cast<usize>(i)] = bytes[i]; i = i + 1; }
+        return Result::Ok(value: k);
+    }
+
+    public unsafe fn void exportTo(View<uint8> into) {
+        if (into.length() != SECRETKEYBYTES) { panic(msg: "sign::SecretKey.exportTo: the buffer is not SECRETKEYBYTES long"); }
+        isize i = 0;
+        while (i < SECRETKEYBYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
+    }
+
+    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+
+    unsafe ~SecretKey() { sodium_memzero(pnt: this.bytes.dataPtr(), len: cast<usize>(SECRETKEYBYTES)); }
+}
+
+type resource KeyPair {
+    // A field of a `resource` is always private in kama, and a `ref`-returning accessor cannot feed a
+    // `ref` parameter (a call result is a temporary). So the operations take the PAIR by `ref`, the
+    // public half is read out as a value (`PublicKey pk = pair.publicKey();` — what goes on the wire),
+    // and the secret half never leaves except through `exportSecretKeyTo`, for storage.
+    PublicKey pk;
+    SecretKey sk;
+
+    public fn ref PublicKey publicKey() { return this.pk; }
+
+    // For the module's own operations (a free function cannot read a private field, even in this file).
+    public unsafe fn UnsafePtr<uint8> rawPublicKey() { return this.pk.raw(); }
+    public unsafe fn UnsafePtr<uint8> rawSecretKey() { return this.sk.raw(); }
+
+    public unsafe fn void exportSecretKeyTo(View<uint8> into) { this.sk.exportTo(into: into); }
+
+    // Rebuild the pair from a stored secret key: the public half is derived.
+    public unsafe ctor fromSecretKey(SecretKey secretKey) {
+        ready();
+        this.pk = PublicKey.zeroed();
+        this.sk = give secretKey;
+        int32 rc = crypto_sign_ed25519_sk_to_pk(pk: this.pk.raw(), sk: this.sk.raw());
+    }
+
+
+    public unsafe ctor random() {
+        ready();
+        this.pk = PublicKey.zeroed();
+        this.sk = SecretKey.zeroed();
+        int32 rc = crypto_sign_keypair(pk: this.pk.raw(), sk: this.sk.raw());
+    }
+
+    public unsafe ctor Result<KeyPair, SodiumError> fromSeed(View<uint8> seed) {
+        if (seed.length() != SEEDBYTES) {
+            return Result::Err(error: SodiumError::BadLength(expected: SEEDBYTES, got: seed.length()));
+        }
+        ready();
+        KeyPair p = KeyPair.random();
+        int32 rc = crypto_sign_seed_keypair(pk: p.pk.raw(), sk: p.sk.raw(), seed: addr(of: seed[0]));
+        return Result::Ok(value: p);
+    }
+}
+
+type value Signature {
+    InlineArray<uint8>#(64) bytes;
+
+    // All-zero bytes, to be filled. Public because kama's member visibility is per TYPE (there is no
+    // module-internal tier), and the functions that fill it live outside the type; every path that
+    // mints one fills it before it leaves.
+    public ctor zeroed() { this.bytes = [0; 64]; }
+
+    public unsafe ctor Result<Signature, SodiumError> fromBytes(View<uint8> bytes) {
+        if (bytes.length() != BYTES) {
+            return Result::Err(error: SodiumError::BadLength(expected: BYTES, got: bytes.length()));
+        }
+        Signature s = Signature.zeroed();
+        isize i = 0;
+        while (i < BYTES) { s.bytes[cast<usize>(i)] = bytes[i]; i = i + 1; }
+        return Result::Ok(value: s);
+    }
+
+    public unsafe fn void exportTo(View<uint8> into) {
+        if (into.length() != BYTES) { panic(msg: "sign::Signature.exportTo: the buffer is not BYTES long"); }
+        isize i = 0;
+        while (i < BYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
+    }
+
+    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+}
+
+// Sign `message` with the pair's secret key. Deterministic: the same key and message give the same signature.
+unsafe fn Signature sign(View<uint8> message, ref KeyPair key) {
+    ready();
+    Signature s = Signature.zeroed();
+    UnsafePtr<uint8> m = message.length() == 0 ? s.raw() : addr(of: message[0]);
+    int32 rc = kama_sodium_sign_detached(sig: s.raw(), m: m, mlen: cast<uint64>(message.length()), sk: key.rawSecretKey());
+    if (rc != 0) { panic(msg: "sign::sign: signing failed"); }
+    return s;
+}
+
+// Does `signature` sign `message` under the pair whose public half is `key`? `false` for a forged or
+// altered signature, an altered message, or another signer.
+unsafe fn bool verify(ref Signature signature, View<uint8> message, ref PublicKey key) {
+    ready();
+    UnsafePtr<uint8> m = message.length() == 0 ? signature.raw() : addr(of: message[0]);
+    return crypto_sign_verify_detached(sig: signature.raw(), m: m, mlen: cast<uint64>(message.length()), pk: key.raw()) == 0;
+}

@@ -1,0 +1,131 @@
+import { std::collections::View };
+export { SodiumError, Nonce, NONCEBYTES, ready, memzero, equalsConstantTime, version };
+
+// @kama/sodium — libsodium, bound. Nothing cryptographic is written here: every primitive is
+// libsodium's, reached by `extern fn` from the module that offers it, and this package adds the types
+// that make misuse a compile error rather than a wrong answer.
+//
+//   sodium::secretbox   one shared key, XSalsa20-Poly1305 — authenticated encryption, no associated data
+//   sodium::aead        one shared key, XChaCha20-Poly1305-IETF — the same, WITH associated data (a
+//                       packet header authenticated but not encrypted), the choice for a protocol
+//   sodium::box         two key pairs, X25519 + XSalsa20-Poly1305 — public-key authenticated
+//                       encryption, and SEALED boxes for an anonymous sender
+//   sodium::sign        Ed25519 detached signatures
+//   sodium::kx          X25519 key exchange into DIRECTIONAL session keys (rx/tx), client and server
+//   sodium::random      the CSPRNG libsodium keys itself with
+//
+// The rules every module holds:
+//   - Secret material is a `type resource` over an inline byte array, zeroed by `sodium_memzero` in its
+//     destructor: move-only, never copied by accident, gone when dropped. Public keys, nonces,
+//     signatures are `type value` and copy freely.
+//   - Sizes are TYPES. A `secretbox::Key` is 32 bytes by construction; a size the compiler cannot see
+//     (bytes off the wire) enters through `fromBytes(bytes:)`, which answers `Result`.
+//   - A data error is a `Result` (`open` of a forged box is `Err(Forged)`); a contract violation panics
+//     (an `into` buffer of the wrong size, exactly like an index out of range).
+//   - Each operation has an `into` form that writes a caller's buffer and allocates nothing — the one
+//     a per-packet path wants — and an allocating form defined on top of it.
+//   - `ready()` runs first in every entry point: libsodium's `sodium_init` once per process, behind
+//     an acquire load after the first time (csrc/kama_sodium.c).
+
+extern "kama_sodium.h";
+extern fn int32 kama_sodium_init();
+extern fn void sodium_memzero(UnsafePtr<uint8> pnt, usize len);
+extern fn int32 sodium_memcmp(UnsafePtr<uint8> b1, UnsafePtr<uint8> b2, usize len);
+extern fn UnsafePtr<uint8> kama_sodium_version();
+extern fn string kama_string_from_raw(UnsafePtr<uint8> src, isize start, isize len);
+extern fn usize kama_sodium_strlen(UnsafePtr<uint8> s);
+extern fn void randombytes_buf(UnsafePtr<uint8> buf, usize size);
+extern fn void sodium_increment(UnsafePtr<uint8> n, usize nlen);
+
+comptime isize NONCEBYTES = 24;   // crypto_secretbox_NONCEBYTES == crypto_box_NONCEBYTES == aead xchacha NPUBBYTES, pinned in csrc/kama_sodium.c
+
+type enum SodiumError implements Error {
+    // The ciphertext or signature did not verify: forged, corrupted, or made under another key or nonce.
+    // libsodium reports these as one outcome on purpose, and so does this.
+    Forged,
+    // Bytes off the wire that are not the size the type is.
+    BadLength(isize expected, isize got),
+    // A public key libsodium refuses to derive a session from (`kx`): not a valid point.
+    InvalidPublicKey;
+
+    public const fn string message() {
+        return match (this) {
+            case Forged:                          "verification failed: forged, corrupted, or a different key or nonce";
+            case BadLength(expected: e, got: g):  "expected ${e} bytes, got ${g}";
+            case InvalidPublicKey:                "the peer's public key is not a valid point";
+        };
+    }
+}
+
+// The 24-byte nonce `secretbox`, `aead` and `box` all take — one type, because it is one thing: a
+// number used once under a given key. Random per message (`Nonce.random()`; 24 bytes make collisions
+// negligible with no bookkeeping) or a counter (`increment()` per message, never reset under one key).
+// A value: public, copied freely.
+type value Nonce {
+    InlineArray<uint8>#(24) bytes;
+
+    // All-zero bytes, to be filled. Public because kama's member visibility is per TYPE (there is no
+    // module-internal tier), and the functions that fill it live outside the type; every path that
+    // mints one fills it before it leaves.
+    public ctor zeroed() { this.bytes = [0; 24]; }
+
+    public unsafe ctor random() {
+        ready();
+        this.bytes = [0; 24];
+        randombytes_buf(buf: this.bytes.dataPtr(), size: cast<usize>(NONCEBYTES));
+    }
+
+    public unsafe ctor Result<Nonce, SodiumError> fromBytes(View<uint8> bytes) {
+        if (bytes.length() != NONCEBYTES) {
+            return Result::Err(error: SodiumError::BadLength(expected: NONCEBYTES, got: bytes.length()));
+        }
+        Nonce n = Nonce.zeroed();
+        isize i = 0;
+        while (i < NONCEBYTES) { n.bytes[cast<usize>(i)] = bytes[i]; i = i + 1; }
+        return Result::Ok(value: n);
+    }
+
+    // The nonce as a little-endian counter, plus one.
+    public unsafe fn void increment() {
+        sodium_increment(n: this.bytes.dataPtr(), nlen: cast<usize>(NONCEBYTES));
+    }
+
+    public unsafe fn void exportTo(View<uint8> into) {
+        if (into.length() != NONCEBYTES) { panic(msg: "sodium::Nonce.exportTo: the buffer is not NONCEBYTES long"); }
+        isize i = 0;
+        while (i < NONCEBYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
+    }
+
+    // The bytes, for libsodium. `ref`, not `const ref`, wherever a nonce or key is passed: kama has no
+    // const raw pointer, and `addr(of:)` on a const receiver is refused by design ("const is deep").
+    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+}
+
+// libsodium initialized, or a panic: `sodium_init` fails only on a platform with no entropy source,
+// which is not a state a program handles per call.
+unsafe fn void ready() {
+    if (kama_sodium_init() != 0) { panic(msg: "sodium: libsodium refused to initialize"); }
+}
+
+// Overwrite a buffer with zeros in a way the C compiler cannot optimize away. For a secret that lived
+// in a caller's buffer rather than in a `Key`.
+unsafe fn void memzero(View<uint8> bytes) {
+    if (bytes.length() == 0) { return; }
+    sodium_memzero(pnt: addr(of: bytes[0]), len: cast<usize>(bytes.length()));
+}
+
+// Equality that takes the same time whether the first byte or the last one differs. For comparing a
+// MAC, a token or a key — anything an attacker could learn from the timing of `==`. Two lengths that
+// differ are unequal at once: the length is not the secret.
+unsafe fn bool equalsConstantTime(View<uint8> a, View<uint8> b) {
+    if (a.length() != b.length()) { return false; }
+    if (a.length() == 0) { return true; }
+    return sodium_memcmp(b1: addr(of: a[0]), b2: addr(of: b[0]), len: cast<usize>(a.length())) == 0;
+}
+
+// The vendored libsodium's version string ("1.0.20").
+unsafe fn string version() {
+    ready();
+    UnsafePtr<uint8> v = kama_sodium_version();
+    return kama_string_from_raw(src: v, start: 0, len: cast<isize>(kama_sodium_strlen(s: v)));
+}

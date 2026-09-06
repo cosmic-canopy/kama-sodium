@@ -1,0 +1,36 @@
+import { sodium::random::fill, sodium::random::uniform, sodium::random::word,
+         sodium_tests::check, std::collections::View, std::collections::FixedArray };
+export { randomTests };
+
+fn int32 randomTests() {
+    int32 f = 0;
+    // Two fills of 32 bytes are not equal, and not all zero — a generator that answered either would
+    // be broken in a way no other test here could see.
+    FixedArray<uint8> a = FixedArray::<uint8>.make(size: 32);
+    FixedArray<uint8> b = FixedArray::<uint8>.make(size: 32);
+    fill(into: a.view());
+    fill(into: b.view());
+    bool same = true;
+    bool zero = true;
+    isize i = 0;
+    while (i < 32) {
+        if (a[i] != b[i]) { same = false; }
+        if (a[i] != 0ui8) { zero = false; }
+        i = i + 1;
+    }
+    f = f + check(ok: !same && !zero, what: "random: two fills differ and are not zero");
+    FixedArray<uint8> empty = FixedArray::<uint8>.make(size: 0);
+    fill(into: empty.view());   // an empty fill is fine
+    // uniform stays below its bound; 0 answers 0.
+    bool inRange = true;
+    i = 0;
+    while (i < 1000) { if (uniform(upperBound: 7ui32) >= 7ui32) { inRange = false; } i = i + 1; }
+    f = f + check(ok: inRange, what: "random: uniform(7) is below 7");
+    f = f + check(ok: uniform(upperBound: 0ui32) == 0ui32, what: "random: uniform(0) is 0");
+    f = f + check(ok: uniform(upperBound: 1ui32) == 0ui32, what: "random: uniform(1) is 0");
+    uint32 w1 = word();
+    uint32 w2 = word();
+    uint32 w3 = word();
+    f = f + check(ok: !(w1 == w2 && w2 == w3), what: "random: three words are not all equal");
+    return f;
+}

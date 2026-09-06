@@ -1,0 +1,88 @@
+import { sodium::SodiumError, sodium::Nonce, sodium::equalsConstantTime,
+         sodium::kx::PublicKey, sodium::kx::KeyPair, sodium::kx::SessionKeys, sodium::kx::Direction,
+         sodium::kx::PUBLICKEYBYTES, sodium::kx::SECRETKEYBYTES, sodium::kx::SESSIONKEYBYTES,
+         sodium::kx::clientSessionKeys, sodium::kx::serverSessionKeys,
+         sodium::aead::Key as AeadKey, sodium::aead::seal as aeadSeal, sodium::aead::open as aeadOpen,
+         sodium::secretbox::Key as BoxKey, sodium::secretbox::seal as sbSeal, sodium::secretbox::open as sbOpen,
+         sodium_tests::check, sodium_tests::isForged,
+         std::collections::View, std::collections::FixedArray };
+export { kxTests };
+
+fn int32 kxTests() {
+    int32 f = 0;
+    f = f + check(ok: PUBLICKEYBYTES == 32 && SECRETKEYBYTES == 32 && SESSIONKEYBYTES == 32, what: "kx: sizes");
+
+    KeyPair client = KeyPair.random();
+    KeyPair server = KeyPair.random();
+    FixedArray<uint8> msg = FixedArray::<uint8>.make(size: 32);
+    FixedArray<uint8> header = FixedArray::<uint8>.make(size: 4);
+    isize i = 0;
+    while (i < 32) { msg[i] = truncate<uint8>(i * 9); i = i + 1; }
+    Nonce nonce = Nonce.random();
+    PublicKey clientPk = client.publicKey();
+    PublicKey serverPk = server.publicKey();
+
+    match (clientSessionKeys(client: client, server: serverPk)) {
+        case Ok(value: c): {
+            match (serverSessionKeys(server: server, client: clientPk)) {
+                case Ok(value: s): {
+                    // client.tx == server.rx: what the client seals, the server opens — through an aead key
+                    // taken straight from the session key. And the other direction through secretbox.
+                    AeadKey ctx = AeadKey.fromSession(keys: c, direction: Direction::Tx);
+                    AeadKey srx = AeadKey.fromSession(keys: s, direction: Direction::Rx);
+                    FixedArray<uint8> up = aeadSeal(message: msg.view(), ad: header.view(), nonce: nonce, key: ctx);
+                    match (aeadOpen(ciphertext: up.view(), ad: header.view(), nonce: nonce, key: srx)) {
+                        case Ok(value: p):  { f = f + check(ok: equalsConstantTime(a: p.view(), b: msg.view()), what: "kx: client.tx opens as server.rx"); }
+                        case Err(error: e): { f = f + check(ok: false, what: "kx: server could not open the client's packet"); }
+                    };
+                    BoxKey stx = BoxKey.fromSession(keys: s, direction: Direction::Tx);
+                    BoxKey crx = BoxKey.fromSession(keys: c, direction: Direction::Rx);
+                    FixedArray<uint8> down = sbSeal(message: msg.view(), nonce: nonce, key: stx);
+                    match (sbOpen(ciphertext: down.view(), nonce: nonce, key: crx)) {
+                        case Ok(value: p):  { f = f + check(ok: equalsConstantTime(a: p.view(), b: msg.view()), what: "kx: server.tx opens as client.rx"); }
+                        case Err(error: e): { f = f + check(ok: false, what: "kx: client could not open the server's packet"); }
+                    };
+                    // The directions are distinct: the client's own tx key does not open the server's packet.
+                    BoxKey ctxAsBox = BoxKey.fromSession(keys: c, direction: Direction::Tx);
+                    f = f + check(ok: isForged(r: sbOpen(ciphertext: down.view(), nonce: nonce, key: ctxAsBox)), what: "kx: rx and tx differ");
+                }
+                case Err(error: e): { f = f + check(ok: false, what: "kx: serverSessionKeys"); }
+            };
+        }
+        case Err(error: e): { f = f + check(ok: false, what: "kx: clientSessionKeys"); }
+    };
+
+    // A third party with its own pair derives keys that open nothing.
+    KeyPair eve = KeyPair.random();
+    match (clientSessionKeys(client: eve, server: serverPk)) {
+        case Ok(value: c): {
+            match (serverSessionKeys(server: server, client: clientPk)) {
+                case Ok(value: s): {
+                    AeadKey etx = AeadKey.fromSession(keys: c, direction: Direction::Tx);
+                    AeadKey srx = AeadKey.fromSession(keys: s, direction: Direction::Rx);
+                    FixedArray<uint8> up = aeadSeal(message: msg.view(), ad: header.view(), nonce: nonce, key: etx);
+                    f = f + check(ok: isForged(r: aeadOpen(ciphertext: up.view(), ad: header.view(), nonce: nonce, key: srx)), what: "kx: a third party's session does not open");
+                }
+                case Err(error: e): { f = f + check(ok: false, what: "kx: serverSessionKeys (eve)"); }
+            };
+        }
+        case Err(error: e): { f = f + check(ok: false, what: "kx: clientSessionKeys (eve)"); }
+    };
+
+    // A seeded pair is deterministic.
+    FixedArray<uint8> seed = FixedArray::<uint8>.make(size: 32);
+    i = 0;
+    while (i < 32) { seed[i] = truncate<uint8>(100 + i); i = i + 1; }
+    FixedArray<uint8> pk1 = FixedArray::<uint8>.make(size: 32);
+    FixedArray<uint8> pk2 = FixedArray::<uint8>.make(size: 32);
+    match (KeyPair.fromSeed(seed: seed.view())) {
+        case Ok(value: p):  { p.publicKey().exportTo(into: pk1.view()); }
+        case Err(error: e): { f = f + check(ok: false, what: "kx: fromSeed"); }
+    };
+    match (KeyPair.fromSeed(seed: seed.view())) {
+        case Ok(value: p):  { p.publicKey().exportTo(into: pk2.view()); }
+        case Err(error: e): { f = f + check(ok: false, what: "kx: fromSeed again"); }
+    };
+    f = f + check(ok: equalsConstantTime(a: pk1.view(), b: pk2.view()), what: "kx: the same seed gives the same pair");
+    return f;
+}

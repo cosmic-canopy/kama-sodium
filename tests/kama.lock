@@ -1,0 +1,6 @@
+{
+  "lockVersion": 1,
+  "packages": {
+    "@kama/sodium": { "source": "path", "path": "..", "dependencies": [] }
+  }
+}

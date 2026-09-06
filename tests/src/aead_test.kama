@@ -1,0 +1,81 @@
+import { sodium::SodiumError, sodium::Nonce, sodium::equalsConstantTime,
+         sodium::aead::Key, sodium::aead::KEYBYTES, sodium::aead::MACBYTES,
+         sodium::aead::seal, sodium::aead::open, sodium::aead::sealInto, sodium::aead::openInto,
+         sodium_tests::check, sodium_tests::unhex, sodium_tests::isForged, sodium_tests::isBadLength,
+         std::collections::View, std::collections::FixedArray, std::collections::DynamicArray };
+export { aeadTests };
+
+fn int32 aeadKnownAnswer() {
+    // libsodium's own vector (test/default/aead_xchacha20poly1305.c): firstkey / nonce / m / ad -> c.
+    DynamicArray<uint8> kb = unhex(text: "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
+    DynamicArray<uint8> nb = unhex(text: "07000000404142434445464748494a4b4c4d4e4f50515253");
+    DynamicArray<uint8> mb = unhex(text: "4c616469657320616e642047656e746c656d656e206f662074686520636c617373206f66202739393a204966204920636f756c64206f6666657220796f75206f6e6c79206f6e652074697020666f7220746865206675747572652c2073756e73637265656e20776f756c642062652069742e");
+    DynamicArray<uint8> ad = unhex(text: "50515253c0c1c2c3c4c5c6c7");
+    DynamicArray<uint8> cb = unhex(text: "f8ebea4875044066fc162a0604e171feecfb3d20425248563bcfd5a155dcc47bbda70b86e5ab9b55002bd1274c02db35321acd7af8b2e2d25015e136b7679458e9f43243bf719d639badb5feac03f80a19a96ef10cb1d15333a837b90946ba3854ee74da3f2585efc7e1e170e17e15e563e77601f4f85cafa8e5877614e143e68420");
+    int32 f = 0;
+    Result<Nonce, SodiumError> nr = Nonce.fromBytes(bytes: nb.view());
+    Nonce nonce = match (nr) { case Ok(value: n): n; case Err(error: e): { panic(msg: "vector nonce"); return 1; } };
+    Result<Key, SodiumError> kr = Key.fromBytes(bytes: kb.view());
+    Key key = match (give kr) { case Ok(value: k): give k; case Err(error: e): { panic(msg: "vector key"); return 1; } };
+    FixedArray<uint8> sealed = seal(message: mb.view(), ad: ad.view(), nonce: nonce, key: key);
+    f = f + check(ok: equalsConstantTime(a: sealed.view(), b: cb.view()), what: "aead: known-answer ciphertext");
+    match (open(ciphertext: cb.view(), ad: ad.view(), nonce: nonce, key: key)) {
+        case Ok(value: p):  { f = f + check(ok: equalsConstantTime(a: p.view(), b: mb.view()), what: "aead: known-answer plaintext"); }
+        case Err(error: e): { f = f + check(ok: false, what: "aead: known-answer open failed"); }
+    };
+    return f;
+}
+
+fn int32 aeadTests() {
+    int32 f = 0;
+    f = f + check(ok: KEYBYTES == 32 && MACBYTES == 16, what: "aead: sizes");
+    f = f + aeadKnownAnswer();
+
+    Key key = Key.random();
+    Nonce nonce = Nonce.random();
+    FixedArray<uint8> msg = FixedArray::<uint8>.make(size: 64);
+    FixedArray<uint8> header = FixedArray::<uint8>.make(size: 8);
+    isize i = 0;
+    while (i < 64) { msg[i] = truncate<uint8>(i * 3); i = i + 1; }
+    i = 0;
+    while (i < 8) { header[i] = truncate<uint8>(200 + i); i = i + 1; }
+
+    FixedArray<uint8> boxed = seal(message: msg.view(), ad: header.view(), nonce: nonce, key: key);
+    f = f + check(ok: boxed.length() == 80, what: "aead: sealed length is message + MACBYTES");
+    match (open(ciphertext: boxed.view(), ad: header.view(), nonce: nonce, key: key)) {
+        case Ok(value: p):  { f = f + check(ok: equalsConstantTime(a: p.view(), b: msg.view()), what: "aead: round trip"); }
+        case Err(error: e): { f = f + check(ok: false, what: "aead: round trip open failed"); }
+    };
+
+    // The associated data is covered: a changed header is Forged even though the ciphertext is intact.
+    header[0] = header[0] ^ 1ui8;
+    f = f + check(ok: isForged(r: open(ciphertext: boxed.view(), ad: header.view(), nonce: nonce, key: key)), what: "aead: an altered header is Forged");
+    header[0] = header[0] ^ 1ui8;
+    // ...and a changed ciphertext, the wrong key, the wrong nonce.
+    boxed[10] = boxed[10] ^ 1ui8;
+    f = f + check(ok: isForged(r: open(ciphertext: boxed.view(), ad: header.view(), nonce: nonce, key: key)), what: "aead: an altered body is Forged");
+    boxed[10] = boxed[10] ^ 1ui8;
+    Key other = Key.random();
+    f = f + check(ok: isForged(r: open(ciphertext: boxed.view(), ad: header.view(), nonce: nonce, key: other)), what: "aead: the wrong key is Forged");
+    Nonce nonce2 = nonce;
+    nonce2.increment();
+    f = f + check(ok: isForged(r: open(ciphertext: boxed.view(), ad: header.view(), nonce: nonce2, key: key)), what: "aead: the wrong nonce is Forged");
+    // Empty associated data is allowed, and is not the same as some.
+    FixedArray<uint8> none = FixedArray::<uint8>.make(size: 0);
+    FixedArray<uint8> bare = seal(message: msg.view(), ad: none.view(), nonce: nonce, key: key);
+    f = f + check(ok: !isForged(r: open(ciphertext: bare.view(), ad: none.view(), nonce: nonce, key: key)), what: "aead: empty ad round trips");
+    f = f + check(ok: isForged(r: open(ciphertext: bare.view(), ad: header.view(), nonce: nonce, key: key)), what: "aead: sealed without ad, opened with ad, is Forged");
+    FixedArray<uint8> tiny = FixedArray::<uint8>.make(size: 3);
+    f = f + check(ok: isBadLength(r: open(ciphertext: tiny.view(), ad: none.view(), nonce: nonce, key: key), expected: 16, got: 3), what: "aead: a 3-byte ciphertext is BadLength(16, 3)");
+
+    // The `into` forms.
+    FixedArray<uint8> outBuf = FixedArray::<uint8>.make(size: 80);
+    isize wrote = sealInto(into: outBuf.view(), message: msg.view(), ad: header.view(), nonce: nonce, key: key);
+    f = f + check(ok: wrote == 80 && equalsConstantTime(a: outBuf.view(), b: boxed.view()), what: "aead: sealInto matches seal");
+    FixedArray<uint8> plainBuf = FixedArray::<uint8>.make(size: 64);
+    match (openInto(into: plainBuf.view(), ciphertext: outBuf.view(), ad: header.view(), nonce: nonce, key: key)) {
+        case Ok(value: n):  { f = f + check(ok: n == 64 && equalsConstantTime(a: plainBuf.view(), b: msg.view()), what: "aead: openInto round trip"); }
+        case Err(error: e): { f = f + check(ok: false, what: "aead: openInto failed"); }
+    };
+    return f;
+}

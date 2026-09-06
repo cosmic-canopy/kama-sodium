@@ -1,0 +1,49 @@
+// The package's own tests: one program, one fn per module, exit 0 when every case holds. A failing
+// case prints its name, so the runner's log says WHICH, not just that.
+import { sodium::SodiumError, sodium::version, sodium_tests::secretboxTests, sodium_tests::aeadTests,
+         sodium_tests::boxTests, sodium_tests::signTests, sodium_tests::kxTests, sodium_tests::randomTests,
+         std::collections::FixedArray, std::collections::DynamicArray,
+         std::encoding::hex::DecodeError, std::encoding::hex::decode as hexDecode };
+export { check, unhex, isForged, isBadLength };
+
+fn int32 check(bool ok, string what) {
+    if (!ok) { println(s: "  FAIL ${what}"); return 1; }
+    return 0;
+}
+
+// Test data is constant, so a decode failure is a typo in this file, not a case.
+fn DynamicArray<uint8> unhex(string text) {
+    Result<DynamicArray<uint8>, DecodeError> r = hexDecode(text: text);
+    return match (give r) {
+        case Ok(value: b):  give b;
+        case Err(error: e): { panic(msg: "unhex: bad test vector"); return DynamicArray::<uint8>.withCapacity(capacity: 0); }
+    };
+}
+
+fn bool isForged(Result<FixedArray<uint8>, SodiumError> r) {
+    return match (r) {
+        case Ok(value: p):  false;
+        case Err(error: e): match (e) { case Forged: true; case BadLength(expected: x, got: y): false; case InvalidPublicKey: false; };
+    };
+}
+
+fn bool isBadLength(Result<FixedArray<uint8>, SodiumError> r, isize expected, isize got) {
+    return match (r) {
+        case Ok(value: p):  false;
+        case Err(error: e): match (e) { case Forged: false; case BadLength(expected: x, got: y): x == expected && y == got; case InvalidPublicKey: false; };
+    };
+}
+
+fn int32 main() {
+    int32 failed = 0;
+    failed = failed + secretboxTests();
+    failed = failed + aeadTests();
+    failed = failed + boxTests();
+    failed = failed + signTests();
+    failed = failed + kxTests();
+    failed = failed + randomTests();
+    if (failed != 0) { println(s: "sodium tests: ${failed} failed"); return 1; }
+    string v = version();
+    println(s: "sodium tests: OK (libsodium ${v})");
+    return 0;
+}
