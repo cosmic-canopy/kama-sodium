@@ -66,7 +66,8 @@ about 2 s of wall time at `-O2` and under 1 s in debug, warning-free under kama'
 arm64 and x86_64 alike.
 
 Vendored rather than a system `-lsodium` because a consumer then needs nothing installed on any target
-(macOS, Linux, Windows, wasm — a system libsodium cannot exist for wasm), a dependency cannot add a
+(macOS, Linux, Windows, wasm — a system libsodium cannot exist for wasm; the whole test suite and the
+example run under node on `--target WASM`, entropy from the browser API, with this same define list), a dependency cannot add a
 machine path like `-I/opt/homebrew/include` for its consumer, and a shipped binary links one known
 libsodium rather than whichever a machine had. Upgrading is changing `VERSION`/`SHA256` in the script,
 running it, reading the diff, and bumping this package's version.
