@@ -16,11 +16,13 @@ comptime isize SEEDBYTES      = 32;   // crypto_sign_SEEDBYTES
 
 extern "kama_sodium.h";
 extern fn int32 crypto_sign_keypair(UnsafePtr<uint8> pk, UnsafePtr<uint8> sk);
-extern fn int32 crypto_sign_seed_keypair(UnsafePtr<uint8> pk, UnsafePtr<uint8> sk, UnsafePtr<uint8> seed);
-extern fn int32 kama_sodium_sign_detached(UnsafePtr<uint8> sig, UnsafePtr<uint8> m, uint64 mlen, UnsafePtr<uint8> sk);
-extern fn int32 crypto_sign_verify_detached(UnsafePtr<uint8> sig, UnsafePtr<uint8> m, uint64 mlen, UnsafePtr<uint8> pk);
+extern fn int32 crypto_sign_seed_keypair(UnsafePtr<uint8> pk, UnsafePtr<uint8> sk, UnsafeConstPtr<uint8> seed);
+extern fn int32 kama_sodium_sign_detached(UnsafePtr<uint8> sig, UnsafeConstPtr<uint8> m, uint64 mlen,
+                                          UnsafeConstPtr<uint8> sk);
+extern fn int32 crypto_sign_verify_detached(UnsafeConstPtr<uint8> sig, UnsafeConstPtr<uint8> m, uint64 mlen,
+                                            UnsafeConstPtr<uint8> pk);
 extern fn void  sodium_memzero(UnsafePtr<uint8> pnt, usize len);
-extern fn int32 crypto_sign_ed25519_sk_to_pk(UnsafePtr<uint8> pk, UnsafePtr<uint8> sk);
+extern fn int32 crypto_sign_ed25519_sk_to_pk(UnsafePtr<uint8> pk, UnsafeConstPtr<uint8> sk);
 
 type value PublicKey {
     InlineArray<uint8>#(32) bytes;
@@ -40,13 +42,18 @@ type value PublicKey {
         return Result::Ok(value: k);
     }
 
-    public unsafe fn void exportTo(View<uint8> into) {
+    public unsafe const fn void exportTo(View<uint8> into) {
         if (into.length() != PUBLICKEYBYTES) { panic(msg: "sign::PublicKey.exportTo: the buffer is not PUBLICKEYBYTES long"); }
         isize i = 0;
         while (i < PUBLICKEYBYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
     }
 
-    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+    // The bytes, for libsodium: read-only and `const`, so a `const ref PublicKey` can reach C.
+    // `rawMut()` is the writable half, and it exists because `KeyPair`'s constructors have to hand
+    // libsodium a buffer to FILL — and a field is private to its own type, so `KeyPair` cannot reach
+    // `this.pk.bytes` itself. Non-const on purpose: a `const ref` holder can never call it.
+    public unsafe const fn UnsafeConstPtr<uint8> raw()    { return this.bytes.dataPtr(); }
+    public unsafe fn       UnsafePtr<uint8>      rawMut() { return this.bytes.dataPtrMut(); }
 }
 
 // 64 bytes: the seed and the public key, as libsodium lays it out.
@@ -68,15 +75,16 @@ type resource SecretKey {
         return Result::Ok(value: k);
     }
 
-    public unsafe fn void exportTo(View<uint8> into) {
+    public unsafe const fn void exportTo(View<uint8> into) {
         if (into.length() != SECRETKEYBYTES) { panic(msg: "sign::SecretKey.exportTo: the buffer is not SECRETKEYBYTES long"); }
         isize i = 0;
         while (i < SECRETKEYBYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
     }
 
-    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+    public unsafe const fn UnsafeConstPtr<uint8> raw()    { return this.bytes.dataPtr(); }
+    public unsafe fn       UnsafePtr<uint8>      rawMut() { return this.bytes.dataPtrMut(); }
 
-    unsafe ~SecretKey() { sodium_memzero(pnt: this.bytes.dataPtr(), len: cast<usize>(SECRETKEYBYTES)); }
+    unsafe ~SecretKey() { sodium_memzero(pnt: this.bytes.dataPtrMut(), len: cast<usize>(SECRETKEYBYTES)); }
 }
 
 type resource KeyPair {
@@ -90,17 +98,19 @@ type resource KeyPair {
     public fn ref PublicKey publicKey() { return this.pk; }
 
     // For the module's own operations (a free function cannot read a private field, even in this file).
-    public unsafe fn UnsafePtr<uint8> rawPublicKey() { return this.pk.raw(); }
-    public unsafe fn UnsafePtr<uint8> rawSecretKey() { return this.sk.raw(); }
+    // Read-only: every call site here passes them to libsodium as inputs, so neither needs a mutable
+    // form. The pair's two halves are FILLED inside the constructors below, through `rawMut()`.
+    public unsafe const fn UnsafeConstPtr<uint8> rawPublicKey() { return this.pk.raw(); }
+    public unsafe const fn UnsafeConstPtr<uint8> rawSecretKey() { return this.sk.raw(); }
 
-    public unsafe fn void exportSecretKeyTo(View<uint8> into) { this.sk.exportTo(into: into); }
+    public unsafe const fn void exportSecretKeyTo(View<uint8> into) { this.sk.exportTo(into: into); }
 
     // Rebuild the pair from a stored secret key: the public half is derived.
     public unsafe ctor fromSecretKey(SecretKey secretKey) {
         ready();
         this.pk = PublicKey.zeroed();
         this.sk = give secretKey;
-        int32 rc = crypto_sign_ed25519_sk_to_pk(pk: this.pk.raw(), sk: this.sk.raw());
+        int32 rc = crypto_sign_ed25519_sk_to_pk(pk: this.pk.rawMut(), sk: this.sk.raw());
     }
 
 
@@ -108,7 +118,7 @@ type resource KeyPair {
         ready();
         this.pk = PublicKey.zeroed();
         this.sk = SecretKey.zeroed();
-        int32 rc = crypto_sign_keypair(pk: this.pk.raw(), sk: this.sk.raw());
+        int32 rc = crypto_sign_keypair(pk: this.pk.rawMut(), sk: this.sk.rawMut());
     }
 
     public unsafe ctor Result<KeyPair, SodiumError> fromSeed(View<uint8> seed) {
@@ -117,7 +127,7 @@ type resource KeyPair {
         }
         ready();
         KeyPair p = KeyPair.random();
-        int32 rc = crypto_sign_seed_keypair(pk: p.pk.raw(), sk: p.sk.raw(), seed: addr(of: seed[0]));
+        int32 rc = crypto_sign_seed_keypair(pk: p.pk.rawMut(), sk: p.sk.rawMut(), seed: addr(of: seed[0]));
         return Result::Ok(value: p);
     }
 }
@@ -140,21 +150,27 @@ type value Signature {
         return Result::Ok(value: s);
     }
 
-    public unsafe fn void exportTo(View<uint8> into) {
+    public unsafe const fn void exportTo(View<uint8> into) {
         if (into.length() != BYTES) { panic(msg: "sign::Signature.exportTo: the buffer is not BYTES long"); }
         isize i = 0;
         while (i < BYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
     }
 
-    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+    // Read-only for `verify`, which only reads a signature; `rawMut()` is the buffer `sign` fills.
+    public unsafe const fn UnsafeConstPtr<uint8> raw()    { return this.bytes.dataPtr(); }
+    public unsafe fn       UnsafePtr<uint8>      rawMut() { return this.bytes.dataPtrMut(); }
 }
 
 // Sign `message` with the pair's secret key. Deterministic: the same key and message give the same signature.
 unsafe fn Signature sign(View<uint8> message, ref KeyPair key) {
     ready();
     Signature s = Signature.zeroed();
-    UnsafePtr<uint8> m = message.length() == 0 ? s.raw() : addr(of: message[0]);
-    int32 rc = kama_sodium_sign_detached(sig: s.raw(), m: m, mlen: cast<uint64>(message.length()), sk: key.rawSecretKey());
+    // An empty message is signable. libsodium takes a pointer it will not read for mlen 0, and a View
+    // has no address to give for length 0 — the signature buffer stands in. Declared and assigned
+    // rather than a ternary: the two arms are `UnsafeConstPtr` and `UnsafePtr`, which do not unify.
+    UnsafeConstPtr<uint8> m = s.raw();
+    if (message.length() != 0) { m = addr(of: message[0]); }
+    int32 rc = kama_sodium_sign_detached(sig: s.rawMut(), m: m, mlen: cast<uint64>(message.length()), sk: key.rawSecretKey());
     if (rc != 0) { panic(msg: "sign::sign: signing failed"); }
     return s;
 }
@@ -163,6 +179,7 @@ unsafe fn Signature sign(View<uint8> message, ref KeyPair key) {
 // altered signature, an altered message, or another signer.
 unsafe fn bool verify(ref Signature signature, View<uint8> message, ref PublicKey key) {
     ready();
-    UnsafePtr<uint8> m = message.length() == 0 ? signature.raw() : addr(of: message[0]);
+    UnsafeConstPtr<uint8> m = signature.raw();
+    if (message.length() != 0) { m = addr(of: message[0]); }
     return crypto_sign_verify_detached(sig: signature.raw(), m: m, mlen: cast<uint64>(message.length()), pk: key.raw()) == 0;
 }

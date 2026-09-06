@@ -19,14 +19,16 @@ comptime isize SEEDBYTES       = 32;   // crypto_kx_SEEDBYTES
 
 extern "kama_sodium.h";
 extern fn int32 crypto_kx_keypair(UnsafePtr<uint8> pk, UnsafePtr<uint8> sk);
-extern fn int32 crypto_kx_seed_keypair(UnsafePtr<uint8> pk, UnsafePtr<uint8> sk, UnsafePtr<uint8> seed);
+extern fn int32 crypto_kx_seed_keypair(UnsafePtr<uint8> pk, UnsafePtr<uint8> sk, UnsafeConstPtr<uint8> seed);
 extern fn int32 crypto_kx_client_session_keys(UnsafePtr<uint8> rx, UnsafePtr<uint8> tx,
-                                              UnsafePtr<uint8> client_pk, UnsafePtr<uint8> client_sk, UnsafePtr<uint8> server_pk);
+                                              UnsafeConstPtr<uint8> client_pk, UnsafeConstPtr<uint8> client_sk,
+                                              UnsafeConstPtr<uint8> server_pk);
 extern fn int32 crypto_kx_server_session_keys(UnsafePtr<uint8> rx, UnsafePtr<uint8> tx,
-                                              UnsafePtr<uint8> server_pk, UnsafePtr<uint8> server_sk, UnsafePtr<uint8> client_pk);
+                                              UnsafeConstPtr<uint8> server_pk, UnsafeConstPtr<uint8> server_sk,
+                                              UnsafeConstPtr<uint8> client_pk);
 extern fn void  sodium_memzero(UnsafePtr<uint8> pnt, usize len);
-extern fn int32 crypto_scalarmult_base(UnsafePtr<uint8> q, UnsafePtr<uint8> n);
-extern fn UnsafePtr<uint8> kama_sodium_copy(UnsafePtr<uint8> dst, UnsafePtr<uint8> src, usize n);
+extern fn int32 crypto_scalarmult_base(UnsafePtr<uint8> q, UnsafeConstPtr<uint8> n);
+extern fn UnsafePtr<uint8> kama_sodium_copy(UnsafePtr<uint8> dst, UnsafeConstPtr<uint8> src, usize n);
 
 type value PublicKey {
     InlineArray<uint8>#(32) bytes;
@@ -46,13 +48,18 @@ type value PublicKey {
         return Result::Ok(value: k);
     }
 
-    public unsafe fn void exportTo(View<uint8> into) {
+    public unsafe const fn void exportTo(View<uint8> into) {
         if (into.length() != PUBLICKEYBYTES) { panic(msg: "kx::PublicKey.exportTo: the buffer is not PUBLICKEYBYTES long"); }
         isize i = 0;
         while (i < PUBLICKEYBYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
     }
 
-    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+    // The bytes, for libsodium: read-only and `const`, so a `const ref PublicKey` can reach C.
+    // `rawMut()` is the writable half, and it exists because `KeyPair`'s constructors have to hand
+    // libsodium a buffer to FILL — and a field is private to its own type, so `KeyPair` cannot reach
+    // `this.pk.bytes` itself. Non-const on purpose: a `const ref` holder can never call it.
+    public unsafe const fn UnsafeConstPtr<uint8> raw()    { return this.bytes.dataPtr(); }
+    public unsafe fn       UnsafePtr<uint8>      rawMut() { return this.bytes.dataPtrMut(); }
 }
 
 type resource SecretKey {
@@ -73,15 +80,16 @@ type resource SecretKey {
         return Result::Ok(value: k);
     }
 
-    public unsafe fn void exportTo(View<uint8> into) {
+    public unsafe const fn void exportTo(View<uint8> into) {
         if (into.length() != SECRETKEYBYTES) { panic(msg: "kx::SecretKey.exportTo: the buffer is not SECRETKEYBYTES long"); }
         isize i = 0;
         while (i < SECRETKEYBYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
     }
 
-    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+    public unsafe const fn UnsafeConstPtr<uint8> raw()    { return this.bytes.dataPtr(); }
+    public unsafe fn       UnsafePtr<uint8>      rawMut() { return this.bytes.dataPtrMut(); }
 
-    unsafe ~SecretKey() { sodium_memzero(pnt: this.bytes.dataPtr(), len: cast<usize>(SECRETKEYBYTES)); }
+    unsafe ~SecretKey() { sodium_memzero(pnt: this.bytes.dataPtrMut(), len: cast<usize>(SECRETKEYBYTES)); }
 }
 
 // A key pair. `random()` for a fresh identity; `fromSeed` for a deterministic one (a seed stored once,
@@ -97,17 +105,19 @@ type resource KeyPair {
     public fn ref PublicKey publicKey() { return this.pk; }
 
     // For the module's own operations (a free function cannot read a private field, even in this file).
-    public unsafe fn UnsafePtr<uint8> rawPublicKey() { return this.pk.raw(); }
-    public unsafe fn UnsafePtr<uint8> rawSecretKey() { return this.sk.raw(); }
+    // Read-only: every call site here passes them to libsodium as inputs, so neither needs a mutable
+    // form. The pair's two halves are FILLED inside the constructors below, through `rawMut()`.
+    public unsafe const fn UnsafeConstPtr<uint8> rawPublicKey() { return this.pk.raw(); }
+    public unsafe const fn UnsafeConstPtr<uint8> rawSecretKey() { return this.sk.raw(); }
 
-    public unsafe fn void exportSecretKeyTo(View<uint8> into) { this.sk.exportTo(into: into); }
+    public unsafe const fn void exportSecretKeyTo(View<uint8> into) { this.sk.exportTo(into: into); }
 
     // Rebuild the pair from a stored secret key: the public half is derived.
     public unsafe ctor fromSecretKey(SecretKey secretKey) {
         ready();
         this.pk = PublicKey.zeroed();
         this.sk = give secretKey;
-        int32 rc = crypto_scalarmult_base(q: this.pk.raw(), n: this.sk.raw());
+        int32 rc = crypto_scalarmult_base(q: this.pk.rawMut(), n: this.sk.raw());
     }
 
 
@@ -115,7 +125,7 @@ type resource KeyPair {
         ready();
         this.pk = PublicKey.zeroed();
         this.sk = SecretKey.zeroed();
-        int32 rc = crypto_kx_keypair(pk: this.pk.raw(), sk: this.sk.raw());
+        int32 rc = crypto_kx_keypair(pk: this.pk.rawMut(), sk: this.sk.rawMut());
     }
 
     public unsafe ctor Result<KeyPair, SodiumError> fromSeed(View<uint8> seed) {
@@ -124,7 +134,7 @@ type resource KeyPair {
         }
         ready();
         KeyPair p = KeyPair.random();
-        int32 rc = crypto_kx_seed_keypair(pk: p.pk.raw(), sk: p.sk.raw(), seed: addr(of: seed[0]));
+        int32 rc = crypto_kx_seed_keypair(pk: p.pk.rawMut(), sk: p.sk.rawMut(), seed: addr(of: seed[0]));
         return Result::Ok(value: p);
     }
 }
@@ -139,15 +149,18 @@ type resource SessionKey {
     // mints one fills it before it leaves.
     public ctor zeroed() { this.bytes = [0; 32]; }
 
-    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+    // Write-only. Nothing READS a session key through a pointer — it leaves only by being copied
+    // into a channel key (`copyRawInto` below) — so there is no `raw()`, and `rawMut()` exists solely
+    // for `SessionKeys` to hand libsodium a buffer to fill.
+    public unsafe fn UnsafePtr<uint8> rawMut() { return this.bytes.dataPtrMut(); }
 
-    // For `aead::Key.fromSessionKey` and `secretbox::Key.fromSessionKey`: 32 bytes into the key's own
-    // storage, and nowhere else.
-    public unsafe fn void copyRawInto(UnsafePtr<uint8> dst) {
+    // For `aead::Key.fromSession` and `secretbox::Key.fromSession`: 32 bytes into the key's own
+    // storage, and nowhere else. `const` so a `const ref SessionKeys` can still hand its bytes over.
+    public unsafe const fn void copyRawInto(UnsafePtr<uint8> dst) {
         UnsafePtr<uint8> r = kama_sodium_copy(dst: dst, src: this.bytes.dataPtr(), n: cast<usize>(SESSIONKEYBYTES));
     }
 
-    unsafe ~SessionKey() { sodium_memzero(pnt: this.bytes.dataPtr(), len: cast<usize>(SESSIONKEYBYTES)); }
+    unsafe ~SessionKey() { sodium_memzero(pnt: this.bytes.dataPtrMut(), len: cast<usize>(SESSIONKEYBYTES)); }
 }
 
 // The pair a side ends up with: `rx` opens what the peer sealed with its `tx`, `tx` seals what the peer
@@ -162,12 +175,13 @@ type resource SessionKeys {
     // All-zero bytes, to be filled (see PublicKey.zeroed).
     public ctor zeroed() { this.rxKey = SessionKey.zeroed(); this.txKey = SessionKey.zeroed(); }
 
-    public unsafe fn UnsafePtr<uint8> rawRx() { return this.rxKey.raw(); }
-    public unsafe fn UnsafePtr<uint8> rawTx() { return this.txKey.raw(); }
+    // Write-only, for the two `*SessionKeys` functions below to fill. See `SessionKey.rawMut`.
+    public unsafe fn UnsafePtr<uint8> rawRxMut() { return this.rxKey.rawMut(); }
+    public unsafe fn UnsafePtr<uint8> rawTxMut() { return this.txKey.rawMut(); }
 
     // One direction's 32 bytes into a channel key's own storage — how `aead::Key.fromSession` and
     // `secretbox::Key.fromSession` take a session key with no plaintext copy in between.
-    public unsafe fn void copyInto(Direction direction, UnsafePtr<uint8> dst) {
+    public unsafe const fn void copyInto(Direction direction, UnsafePtr<uint8> dst) {
         match (direction) {
             case Rx: { this.rxKey.copyRawInto(dst: dst); }
             case Tx: { this.txKey.copyRawInto(dst: dst); }
@@ -180,7 +194,7 @@ type resource SessionKeys {
 unsafe fn Result<SessionKeys, SodiumError> clientSessionKeys(ref KeyPair client, ref PublicKey server) {
     ready();
     SessionKeys s = SessionKeys.zeroed();
-    int32 rc = crypto_kx_client_session_keys(rx: s.rawRx(), tx: s.rawTx(),
+    int32 rc = crypto_kx_client_session_keys(rx: s.rawRxMut(), tx: s.rawTxMut(),
                                              client_pk: client.rawPublicKey(), client_sk: client.rawSecretKey(),
                                              server_pk: server.raw());
     if (rc != 0) { return Result::Err(error: SodiumError::InvalidPublicKey); }
@@ -191,7 +205,7 @@ unsafe fn Result<SessionKeys, SodiumError> clientSessionKeys(ref KeyPair client,
 unsafe fn Result<SessionKeys, SodiumError> serverSessionKeys(ref KeyPair server, ref PublicKey client) {
     ready();
     SessionKeys s = SessionKeys.zeroed();
-    int32 rc = crypto_kx_server_session_keys(rx: s.rawRx(), tx: s.rawTx(),
+    int32 rc = crypto_kx_server_session_keys(rx: s.rawRxMut(), tx: s.rawTxMut(),
                                              server_pk: server.rawPublicKey(), server_sk: server.rawSecretKey(),
                                              client_pk: client.raw());
     if (rc != 0) { return Result::Err(error: SodiumError::InvalidPublicKey); }

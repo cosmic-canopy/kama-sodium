@@ -24,7 +24,7 @@ int32_t kama_sodium_sign_detached(uint8_t *sig, const uint8_t *m, unsigned long 
 /* memcpy, reachable from kama without a <string.h> extern of its own. */
 uint8_t *kama_sodium_copy(uint8_t *dst, const uint8_t *src, size_t n);
 /* The version string, as the bytes kama's string constructor takes, and its length. */
-uint8_t       *kama_sodium_version(void);
+const uint8_t *kama_sodium_version(void);
 size_t         kama_sodium_strlen(const uint8_t *s);
 
 #endif

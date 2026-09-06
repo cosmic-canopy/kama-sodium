@@ -33,7 +33,7 @@ int32_t kama_sodium_sign_detached(uint8_t *sig, const uint8_t *m, unsigned long 
 
 uint8_t *kama_sodium_copy(uint8_t *dst, const uint8_t *src, size_t n) { return memcpy(dst, src, n); }
 size_t   kama_sodium_strlen(const uint8_t *s) { return strlen((const char *)s); }
-uint8_t *kama_sodium_version(void) { return (uint8_t *)sodium_version_string(); }
+const uint8_t *kama_sodium_version(void) { return (const uint8_t *)sodium_version_string(); }
 
 /* Every size the kama modules spell as a literal (an `InlineArray<uint8>#(N)` needs a compile-time N,
    which a C function returning it cannot be), pinned to libsodium's macro. A libsodium upgrade that

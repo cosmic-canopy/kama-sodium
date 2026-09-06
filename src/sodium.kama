@@ -30,10 +30,10 @@ export { SodiumError, Nonce, NONCEBYTES, ready, memzero, equalsConstantTime, ver
 extern "kama_sodium.h";
 extern fn int32 kama_sodium_init();
 extern fn void sodium_memzero(UnsafePtr<uint8> pnt, usize len);
-extern fn int32 sodium_memcmp(UnsafePtr<uint8> b1, UnsafePtr<uint8> b2, usize len);
-extern fn UnsafePtr<uint8> kama_sodium_version();
-extern fn string kama_string_from_raw(UnsafePtr<uint8> src, isize start, isize len);
-extern fn usize kama_sodium_strlen(UnsafePtr<uint8> s);
+extern fn int32 sodium_memcmp(UnsafeConstPtr<uint8> b1, UnsafeConstPtr<uint8> b2, usize len);
+extern fn UnsafeConstPtr<uint8> kama_sodium_version();
+extern fn string kama_string_from_raw(UnsafeConstPtr<uint8> src, isize start, isize len);
+extern fn usize kama_sodium_strlen(UnsafeConstPtr<uint8> s);
 extern fn void randombytes_buf(UnsafePtr<uint8> buf, usize size);
 extern fn void sodium_increment(UnsafePtr<uint8> n, usize nlen);
 
@@ -72,7 +72,7 @@ type value Nonce {
     public unsafe ctor random() {
         ready();
         this.bytes = [0; 24];
-        randombytes_buf(buf: this.bytes.dataPtr(), size: cast<usize>(NONCEBYTES));
+        randombytes_buf(buf: this.bytes.dataPtrMut(), size: cast<usize>(NONCEBYTES));
     }
 
     public unsafe ctor Result<Nonce, SodiumError> fromBytes(View<uint8> bytes) {
@@ -87,18 +87,19 @@ type value Nonce {
 
     // The nonce as a little-endian counter, plus one.
     public unsafe fn void increment() {
-        sodium_increment(n: this.bytes.dataPtr(), nlen: cast<usize>(NONCEBYTES));
+        sodium_increment(n: this.bytes.dataPtrMut(), nlen: cast<usize>(NONCEBYTES));
     }
 
-    public unsafe fn void exportTo(View<uint8> into) {
+    public unsafe const fn void exportTo(View<uint8> into) {
         if (into.length() != NONCEBYTES) { panic(msg: "sodium::Nonce.exportTo: the buffer is not NONCEBYTES long"); }
         isize i = 0;
         while (i < NONCEBYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
     }
 
-    // The bytes, for libsodium. `ref`, not `const ref`, wherever a nonce or key is passed: kama has no
-    // const raw pointer, and `addr(of:)` on a const receiver is refused by design ("const is deep").
-    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+    // The bytes, for libsodium. Read-only and `const`, so a `const ref Nonce` can reach C: libsodium
+    // only reads a nonce, and `UnsafeConstPtr<uint8>` is how that is said. The one path that WRITES
+    // these bytes is `increment()`, inside the type, through `dataPtrMut()`.
+    public unsafe const fn UnsafeConstPtr<uint8> raw() { return this.bytes.dataPtr(); }
 }
 
 // libsodium initialized, or a panic: `sodium_init` fails only on a platform with no entropy source,
@@ -126,6 +127,6 @@ unsafe fn bool equalsConstantTime(View<uint8> a, View<uint8> b) {
 // The vendored libsodium's version string ("1.0.20").
 unsafe fn string version() {
     ready();
-    UnsafePtr<uint8> v = kama_sodium_version();
+    UnsafeConstPtr<uint8> v = kama_sodium_version();
     return kama_string_from_raw(src: v, start: 0, len: cast<isize>(kama_sodium_strlen(s: v)));
 }

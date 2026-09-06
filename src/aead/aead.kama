@@ -17,10 +17,12 @@ comptime isize MACBYTES = 16;   // crypto_aead_xchacha20poly1305_ietf_ABYTES
 
 extern "kama_sodium.h";
 extern fn void  crypto_aead_xchacha20poly1305_ietf_keygen(UnsafePtr<uint8> k);
-extern fn int32 kama_sodium_aead_encrypt(UnsafePtr<uint8> c, UnsafePtr<uint8> m, uint64 mlen,
-                                         UnsafePtr<uint8> ad, uint64 adlen, UnsafePtr<uint8> npub, UnsafePtr<uint8> k);
-extern fn int32 kama_sodium_aead_decrypt(UnsafePtr<uint8> m, UnsafePtr<uint8> c, uint64 clen,
-                                         UnsafePtr<uint8> ad, uint64 adlen, UnsafePtr<uint8> npub, UnsafePtr<uint8> k);
+extern fn int32 kama_sodium_aead_encrypt(UnsafePtr<uint8> c, UnsafeConstPtr<uint8> m, uint64 mlen,
+                                         UnsafeConstPtr<uint8> ad, uint64 adlen,
+                                         UnsafeConstPtr<uint8> npub, UnsafeConstPtr<uint8> k);
+extern fn int32 kama_sodium_aead_decrypt(UnsafePtr<uint8> m, UnsafeConstPtr<uint8> c, uint64 clen,
+                                         UnsafeConstPtr<uint8> ad, uint64 adlen,
+                                         UnsafeConstPtr<uint8> npub, UnsafeConstPtr<uint8> k);
 extern fn void  sodium_memzero(UnsafePtr<uint8> pnt, usize len);
 
 // The key: move-only, zeroed on drop. Born random, imported from bytes, or taken from a `kx` session
@@ -36,7 +38,7 @@ type resource Key {
     public unsafe ctor random() {
         ready();
         this.bytes = [0; 32];
-        crypto_aead_xchacha20poly1305_ietf_keygen(k: this.bytes.dataPtr());
+        crypto_aead_xchacha20poly1305_ietf_keygen(k: this.bytes.dataPtrMut());
     }
 
     public unsafe ctor Result<Key, SodiumError> fromBytes(View<uint8> bytes) {
@@ -53,18 +55,21 @@ type resource Key {
     // the hand-off from a key exchange to a channel, with no plaintext copy in between.
     public unsafe ctor fromSession(ref SessionKeys keys, Direction direction) {
         this.bytes = [0; 32];
-        keys.copyInto(direction: direction, dst: this.bytes.dataPtr());
+        keys.copyInto(direction: direction, dst: this.bytes.dataPtrMut());
     }
 
-    public unsafe fn void exportTo(View<uint8> into) {
+    public unsafe const fn void exportTo(View<uint8> into) {
         if (into.length() != KEYBYTES) { panic(msg: "aead::Key.exportTo: the buffer is not KEYBYTES long"); }
         isize i = 0;
         while (i < KEYBYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
     }
 
-    public unsafe fn UnsafePtr<uint8> raw() { return this.bytes.dataPtr(); }
+    // The bytes, for libsodium: read-only and `const`, so a `const ref Key` can reach C. Every path
+    // that WRITES them (`random`, `fromSession`, the destructor) is inside the type and uses
+    // `dataPtrMut()` directly, so there is no writable accessor to hand out.
+    public unsafe const fn UnsafeConstPtr<uint8> raw() { return this.bytes.dataPtr(); }
 
-    unsafe ~Key() { sodium_memzero(pnt: this.bytes.dataPtr(), len: cast<usize>(KEYBYTES)); }
+    unsafe ~Key() { sodium_memzero(pnt: this.bytes.dataPtrMut(), len: cast<usize>(KEYBYTES)); }
 }
 
 // Encrypt `message`, authenticating it together with `ad`, into `into` (exactly message.length() +
