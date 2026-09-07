@@ -95,7 +95,11 @@ type resource KeyPair {
     PublicKey pk;
     SecretKey sk;
 
-    public fn ref PublicKey publicKey() { return this.pk; }
+    // By value, not `ref`: a PublicKey is 32 bytes and a `type value`, so a copy is what a caller
+    // wants anyway — and a `ref`-returning call cannot feed a `ref` parameter (the result is a
+    // temporary), which used to force every caller to bind it to a local first. Copying also makes it
+    // reachable from a `const ref KeyPair`.
+    public const fn PublicKey publicKey() { return this.pk; }
 
     // For the module's own operations (a free function cannot read a private field, even in this file).
     // Read-only: every call site here passes them to libsodium as inputs, so neither needs a mutable
