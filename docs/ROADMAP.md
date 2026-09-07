@@ -72,16 +72,30 @@ emitting prototypes it deliberately does not emit.
 
 ## Before this can really be published
 
-Publishing works today only against a `file://` registry, which is what the round trip in `tools/` proves.
-A real release needs, from `../cstar`:
+Publishing works today only against a `file://` registry — `kama publish kama.json --registry
+file:///tmp/kreg`, then a consumer with `"@kama/sodium": { "version": "^0.2.0", "registry": … }`. That
+round trip is proven for `0.2.0`: resolve, unpack, compile the vendored libsodium, link, run. Everything
+missing is host-side, in `../cstar`:
 
-- **LATER row 21 — hosted registry deployment (M3.3), mandatory verification, and the trust model.** The
-  `@kama` scope needs a hosted index; `kama publish --key` signing and `kama pkg install --verify` need to
-  be the default rather than opt-in.
+- **LATER row 21 — hosted registry deployment (M3.3).** Everything below gates on a live host; the
+  protocol a host must serve is already specified in `../cstar/docs/packages.md`.
+- **The `@kama` scope reserved.** Per `ROADMAP_DETAIL.md` §10, `@kama` and `@std` get reserved the day
+  M3.3's host exists — the scope is the mark and the channel, so this package's name is not really
+  claimed until then.
+- **The trust model, in two steps and already decided** (§10, following where Go, PyPI, npm and crates.io
+  landed rather than per-developer PGP): first an **allowed-signers set** — real `ssh-keygen -Y verify`
+  against a configured trust set, plus closing the warm-store and git-dependency gaps; then **CI/OIDC
+  provenance in a transparency log**, at which point `--verify` stops being opt-in. Mandatory verification
+  is meaningless before a live registry, which is why it is sequenced behind the host and not before it.
 - **A resolution-time compiler check.** The registry index does not carry a package's `"kama"` requirement
   yet, so resolution picks the highest satisfying *package* version and the compiler range is only checked
   at install. A consumer on an older compiler gets a refusal rather than an older-but-working version.
-- **LATER row 22 — scope registration**, once the repo is public.
+- **LATER row 22 — the public repo and its registrations.**
+
+One thing this repo owes back rather than waits on: `../cstar` NOW row 3 wants `kama seed --kind library`
+to seed the package half of the agent guidance, and names **this package's `AGENTS.md` § *This package*
+and its README as the first draft**. Anything learned here that generalises belongs in that section, in
+language a package that is not a libsodium binding can still use.
 
 ## LATER — this package
 
