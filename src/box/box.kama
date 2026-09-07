@@ -1,4 +1,4 @@
-import { sodium::SodiumError, sodium::Nonce, sodium::ready, std::collections::View, std::collections::FixedArray };
+import { sodium::SodiumError, sodium::Nonce, sodium::ready, std::collections::View, std::collections::ConstView, std::collections::FixedArray };
 export { PublicKey, SecretKey, KeyPair,
          PUBLICKEYBYTES, SECRETKEYBYTES, MACBYTES, SEALBYTES, SEEDBYTES,
          seal, open, sealInto, openInto, sealAnonymous, openAnonymous };
@@ -40,7 +40,7 @@ type value PublicKey {
     // mints one fills it before it leaves.
     public ctor zeroed() { this.bytes = [0; 32]; }
 
-    public unsafe ctor Result<PublicKey, SodiumError> fromBytes(View<uint8> bytes) {
+    public unsafe ctor Result<PublicKey, SodiumError> fromBytes(ConstView<uint8> bytes) {
         if (bytes.length() != PUBLICKEYBYTES) {
             return Result::Err(error: SodiumError::BadLength(expected: PUBLICKEYBYTES, got: bytes.length()));
         }
@@ -72,7 +72,7 @@ type resource SecretKey {
     // mints one fills it before it leaves.
     public ctor zeroed() { this.bytes = [0; 32]; }
 
-    public unsafe ctor Result<SecretKey, SodiumError> fromBytes(View<uint8> bytes) {
+    public unsafe ctor Result<SecretKey, SodiumError> fromBytes(ConstView<uint8> bytes) {
         if (bytes.length() != SECRETKEYBYTES) {
             return Result::Err(error: SodiumError::BadLength(expected: SECRETKEYBYTES, got: bytes.length()));
         }
@@ -132,7 +132,7 @@ type resource KeyPair {
         int32 rc = crypto_box_keypair(pk: this.pk.rawMut(), sk: this.sk.rawMut());
     }
 
-    public unsafe ctor Result<KeyPair, SodiumError> fromSeed(View<uint8> seed) {
+    public unsafe ctor Result<KeyPair, SodiumError> fromSeed(ConstView<uint8> seed) {
         if (seed.length() != SEEDBYTES) {
             return Result::Err(error: SodiumError::BadLength(expected: SEEDBYTES, got: seed.length()));
         }
@@ -145,13 +145,16 @@ type resource KeyPair {
 
 // Seal `message` for `to`, from the holder of the pair `from`, into `into` (exactly message.length() +
 // MACBYTES). The sender is identified by its pair; the recipient by its public key, a value received.
-unsafe fn isize sealInto(View<uint8> into, View<uint8> message, const ref Nonce nonce,
+unsafe fn isize sealInto(View<uint8> into, ConstView<uint8> message, const ref Nonce nonce,
                          const ref PublicKey to, const ref KeyPair from) {
     ready();
     if (into.length() != message.length() + MACBYTES) {
         panic(msg: "box::sealInto: `into` must be message.length() + MACBYTES");
     }
-    UnsafePtr<uint8> m = message.length() == 0 ? addr(of: into[0]) : addr(of: message[0]);
+    // An empty message is valid; `into` is at least MACBYTES long, so it stands in as the pointer
+    // libsodium takes but does not read.
+    UnsafeConstPtr<uint8> m = addr(of: into[0]);
+    if (message.length() != 0) { m = addr(of: message[0]); }
     int32 rc = crypto_box_easy(c: addr(of: into[0]), m: m, mlen: cast<uint64>(message.length()),
                                n: nonce.raw(), pk: to.raw(), sk: from.rawSecretKey());
     if (rc != 0) { panic(msg: "box::sealInto: crypto_box_easy failed"); }
@@ -160,7 +163,7 @@ unsafe fn isize sealInto(View<uint8> into, View<uint8> message, const ref Nonce 
 
 // Open a box sealed by the holder of the public key `from` for the holder of the pair `to`, into `into`
 // (exactly ciphertext.length() - MACBYTES). `Err(Forged)` if it was not, or was altered since.
-unsafe fn Result<isize, SodiumError> openInto(View<uint8> into, View<uint8> ciphertext, const ref Nonce nonce,
+unsafe fn Result<isize, SodiumError> openInto(View<uint8> into, ConstView<uint8> ciphertext, const ref Nonce nonce,
                                               const ref PublicKey from, const ref KeyPair to) {
     ready();
     if (ciphertext.length() < MACBYTES) {
@@ -170,51 +173,59 @@ unsafe fn Result<isize, SodiumError> openInto(View<uint8> into, View<uint8> ciph
     if (into.length() != plain) {
         panic(msg: "box::openInto: `into` must be ciphertext.length() - MACBYTES");
     }
-    UnsafePtr<uint8> m = plain == 0 ? addr(of: ciphertext[0]) : addr(of: into[0]);
+    // An empty plaintext leaves `into` zero-length, with no address to give; a one-byte cell stands
+    // in as the destination and libsodium writes none of it.
+    InlineArray<uint8>#(1) unused = [0; 1];
+    UnsafePtr<uint8> m = unused.dataPtrMut();
+    if (plain != 0) { m = addr(of: into[0]); }
     int32 rc = crypto_box_open_easy(m: m, c: addr(of: ciphertext[0]), clen: cast<uint64>(ciphertext.length()),
                                     n: nonce.raw(), pk: from.raw(), sk: to.rawSecretKey());
     if (rc != 0) { return Result::Err(error: SodiumError::Forged); }
     return Result::Ok(value: plain);
 }
 
-unsafe fn FixedArray<uint8> seal(View<uint8> message, const ref Nonce nonce,
+unsafe fn FixedArray<uint8> seal(ConstView<uint8> message, const ref Nonce nonce,
                                  const ref PublicKey to, const ref KeyPair from) {
     FixedArray<uint8> buf = FixedArray::<uint8>.make(size: message.length() + MACBYTES);
-    isize n = sealInto(into: buf.view(), message: message, nonce: nonce, to: to, from: from);
+    isize n = sealInto(into: buf.viewMut(), message: message, nonce: nonce, to: to, from: from);
     return buf;
 }
 
-unsafe fn Result<FixedArray<uint8>, SodiumError> open(View<uint8> ciphertext, const ref Nonce nonce,
+unsafe fn Result<FixedArray<uint8>, SodiumError> open(ConstView<uint8> ciphertext, const ref Nonce nonce,
                                                       const ref PublicKey from, const ref KeyPair to) {
     if (ciphertext.length() < MACBYTES) {
         return Result::Err(error: SodiumError::BadLength(expected: MACBYTES, got: ciphertext.length()));
     }
     FixedArray<uint8> buf = FixedArray::<uint8>.make(size: ciphertext.length() - MACBYTES);
-    match (openInto(into: buf.view(), ciphertext: ciphertext, nonce: nonce, from: from, to: to)) {
+    match (openInto(into: buf.viewMut(), ciphertext: ciphertext, nonce: nonce, from: from, to: to)) {
         case Ok(value: n):  { return Result::Ok(value: buf); }
         case Err(error: e): { return Result::Err(error: e); }
     };
 }
 
 // A sealed box: for `to`, from nobody in particular. SEALBYTES longer than the message; no nonce.
-unsafe fn FixedArray<uint8> sealAnonymous(View<uint8> message, const ref PublicKey to) {
+unsafe fn FixedArray<uint8> sealAnonymous(ConstView<uint8> message, const ref PublicKey to) {
     ready();
     FixedArray<uint8> buf = FixedArray::<uint8>.make(size: message.length() + SEALBYTES);
-    UnsafePtr<uint8> m = message.length() == 0 ? addr(of: buf[0]) : addr(of: message[0]);
+    // `buf` is SEALBYTES long even for an empty message, so it stands in as the unread pointer.
+    UnsafeConstPtr<uint8> m = addr(of: buf[0]);
+    if (message.length() != 0) { m = addr(of: message[0]); }
     int32 rc = crypto_box_seal(c: addr(of: buf[0]), m: m, mlen: cast<uint64>(message.length()), pk: to.raw());
     if (rc != 0) { panic(msg: "box::sealAnonymous: crypto_box_seal failed"); }
     return buf;
 }
 
 // Open a sealed box with the pair it was sealed to. `Err(Forged)` for any other pair or an altered box.
-unsafe fn Result<FixedArray<uint8>, SodiumError> openAnonymous(View<uint8> ciphertext, const ref KeyPair to) {
+unsafe fn Result<FixedArray<uint8>, SodiumError> openAnonymous(ConstView<uint8> ciphertext, const ref KeyPair to) {
     ready();
     if (ciphertext.length() < SEALBYTES) {
         return Result::Err(error: SodiumError::BadLength(expected: SEALBYTES, got: ciphertext.length()));
     }
     isize plain = ciphertext.length() - SEALBYTES;
     FixedArray<uint8> buf = FixedArray::<uint8>.make(size: plain);
-    UnsafePtr<uint8> m = plain == 0 ? addr(of: ciphertext[0]) : addr(of: buf[0]);
+    InlineArray<uint8>#(1) unused = [0; 1];
+    UnsafePtr<uint8> m = unused.dataPtrMut();
+    if (plain != 0) { m = addr(of: buf[0]); }
     int32 rc = crypto_box_seal_open(m: m, c: addr(of: ciphertext[0]), clen: cast<uint64>(ciphertext.length()),
                                     pk: to.rawPublicKey(), sk: to.rawSecretKey());
     if (rc != 0) { return Result::Err(error: SodiumError::Forged); }

@@ -16,12 +16,12 @@ fn int32 knownAnswer() {
     match (KeyPair.fromSeed(seed: seed.view())) {
         case Ok(value: pair): {
             FixedArray<uint8> pk = FixedArray::<uint8>.make(size: 32);
-            pair.publicKey().exportTo(into: pk.view());
+            pair.publicKey().exportTo(into: pk.viewMut());
             f = f + check(ok: equalsConstantTime(a: pk.view(), b: pkb.view()), what: "sign: RFC 8032 public key from seed");
             Signature s = sign(message: msg.view(), key: pair);
             PublicKey pairPk = pair.publicKey();
             FixedArray<uint8> sb = FixedArray::<uint8>.make(size: 64);
-            s.exportTo(into: sb.view());
+            s.exportTo(into: sb.viewMut());
             f = f + check(ok: equalsConstantTime(a: sb.view(), b: sigb.view()), what: "sign: RFC 8032 signature");
             f = f + check(ok: verify(signature: s, message: msg.view(), key: pairPk), what: "sign: RFC 8032 signature verifies");
         }
@@ -50,7 +50,7 @@ fn int32 signTests() {
     f = f + check(ok: !verify(signature: s, message: msg.view(), key: signerPk), what: "sign: an altered message does not verify");
     msg[7] = msg[7] ^ 1ui8;
     FixedArray<uint8> sb = FixedArray::<uint8>.make(size: 64);
-    s.exportTo(into: sb.view());
+    s.exportTo(into: sb.viewMut());
     sb[0] = sb[0] ^ 1ui8;
     match (Signature.fromBytes(bytes: sb.view())) {
         case Ok(value: s2):  { f = f + check(ok: !verify(signature: s2, message: msg.view(), key: signerPk), what: "sign: an altered signature does not verify"); }
@@ -60,8 +60,8 @@ fn int32 signTests() {
     Signature again = sign(message: msg.view(), key: signer);
     FixedArray<uint8> sa = FixedArray::<uint8>.make(size: 64);
     FixedArray<uint8> sc = FixedArray::<uint8>.make(size: 64);
-    s.exportTo(into: sa.view());
-    again.exportTo(into: sc.view());
+    s.exportTo(into: sa.viewMut());
+    again.exportTo(into: sc.viewMut());
     f = f + check(ok: equalsConstantTime(a: sa.view(), b: sc.view()), what: "sign: signing is deterministic");
     FixedArray<uint8> empty = FixedArray::<uint8>.make(size: 0);
     Signature se = sign(message: empty.view(), key: signer);

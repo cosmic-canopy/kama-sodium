@@ -8,8 +8,8 @@ fn int32 randomTests() {
     // be broken in a way no other test here could see.
     FixedArray<uint8> a = FixedArray::<uint8>.make(size: 32);
     FixedArray<uint8> b = FixedArray::<uint8>.make(size: 32);
-    fill(into: a.view());
-    fill(into: b.view());
+    fill(into: a.viewMut());
+    fill(into: b.viewMut());
     bool same = true;
     bool zero = true;
     isize i = 0;
@@ -20,7 +20,7 @@ fn int32 randomTests() {
     }
     f = f + check(ok: !same && !zero, what: "random: two fills differ and are not zero");
     FixedArray<uint8> empty = FixedArray::<uint8>.make(size: 0);
-    fill(into: empty.view());   // an empty fill is fine
+    fill(into: empty.viewMut());   // an empty fill is fine
     // uniform stays below its bound; 0 answers 0.
     bool inRange = true;
     i = 0;

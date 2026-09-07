@@ -70,10 +70,10 @@ fn int32 aeadTests() {
 
     // The `into` forms.
     FixedArray<uint8> outBuf = FixedArray::<uint8>.make(size: 80);
-    isize wrote = sealInto(into: outBuf.view(), message: msg.view(), ad: header.view(), nonce: nonce, key: key);
+    isize wrote = sealInto(into: outBuf.viewMut(), message: msg.view(), ad: header.view(), nonce: nonce, key: key);
     f = f + check(ok: wrote == 80 && equalsConstantTime(a: outBuf.view(), b: boxed.view()), what: "aead: sealInto matches seal");
     FixedArray<uint8> plainBuf = FixedArray::<uint8>.make(size: 64);
-    match (openInto(into: plainBuf.view(), ciphertext: outBuf.view(), ad: header.view(), nonce: nonce, key: key)) {
+    match (openInto(into: plainBuf.viewMut(), ciphertext: outBuf.view(), ad: header.view(), nonce: nonce, key: key)) {
         case Ok(value: n):  { f = f + check(ok: n == 64 && equalsConstantTime(a: plainBuf.view(), b: msg.view()), what: "aead: openInto round trip"); }
         case Err(error: e): { f = f + check(ok: false, what: "aead: openInto failed"); }
     };

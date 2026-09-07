@@ -1,5 +1,5 @@
 import { sodium::SodiumError, sodium::Nonce, sodium::ready, sodium::kx::SessionKeys, sodium::kx::Direction,
-         std::collections::View, std::collections::FixedArray };
+         std::collections::View, std::collections::ConstView, std::collections::FixedArray };
 export { Key, KEYBYTES, MACBYTES, seal, open, sealInto, openInto };
 
 // Authenticated encryption WITH associated data: XChaCha20-Poly1305-IETF. The same contract as
@@ -41,7 +41,7 @@ type resource Key {
         crypto_aead_xchacha20poly1305_ietf_keygen(k: this.bytes.dataPtrMut());
     }
 
-    public unsafe ctor Result<Key, SodiumError> fromBytes(View<uint8> bytes) {
+    public unsafe ctor Result<Key, SodiumError> fromBytes(ConstView<uint8> bytes) {
         if (bytes.length() != KEYBYTES) {
             return Result::Err(error: SodiumError::BadLength(expected: KEYBYTES, got: bytes.length()));
         }
@@ -74,14 +74,19 @@ type resource Key {
 
 // Encrypt `message`, authenticating it together with `ad`, into `into` (exactly message.length() +
 // MACBYTES). `ad` may be empty. Answers the bytes written; allocates nothing.
-unsafe fn isize sealInto(View<uint8> into, View<uint8> message, View<uint8> ad,
+unsafe fn isize sealInto(View<uint8> into, ConstView<uint8> message, ConstView<uint8> ad,
                          const ref Nonce nonce, const ref Key key) {
     ready();
     if (into.length() != message.length() + MACBYTES) {
         panic(msg: "aead::sealInto: `into` must be message.length() + MACBYTES");
     }
-    UnsafePtr<uint8> m = message.length() == 0 ? addr(of: into[0]) : addr(of: message[0]);
-    UnsafePtr<uint8> a = ad.length() == 0 ? addr(of: into[0]) : addr(of: ad[0]);
+    // An empty message and empty associated data are both valid. libsodium wants a pointer it will
+    // not read rather than NULL, and a zero-length window has no address to give, so the output buffer
+    // -- always at least MACBYTES long here -- stands in.
+    UnsafeConstPtr<uint8> m = addr(of: into[0]);
+    if (message.length() != 0) { m = addr(of: message[0]); }
+    UnsafeConstPtr<uint8> a = addr(of: into[0]);
+    if (ad.length() != 0) { a = addr(of: ad[0]); }
     int32 rc = kama_sodium_aead_encrypt(c: addr(of: into[0]), m: m, mlen: cast<uint64>(message.length()),
                                         ad: a, adlen: cast<uint64>(ad.length()), npub: nonce.raw(), k: key.raw());
     if (rc != 0) { panic(msg: "aead::sealInto: encryption failed"); }
@@ -91,7 +96,7 @@ unsafe fn isize sealInto(View<uint8> into, View<uint8> message, View<uint8> ad,
 // Verify `ciphertext` against `ad`, and decrypt it into `into` (exactly ciphertext.length() - MACBYTES).
 // `Err(Forged)` if the ciphertext OR the associated data differ from what was sealed, or the key or
 // nonce do; `into` is then not to be trusted.
-unsafe fn Result<isize, SodiumError> openInto(View<uint8> into, View<uint8> ciphertext, View<uint8> ad,
+unsafe fn Result<isize, SodiumError> openInto(View<uint8> into, ConstView<uint8> ciphertext, ConstView<uint8> ad,
                                               const ref Nonce nonce, const ref Key key) {
     ready();
     if (ciphertext.length() < MACBYTES) {
@@ -101,27 +106,33 @@ unsafe fn Result<isize, SodiumError> openInto(View<uint8> into, View<uint8> ciph
     if (into.length() != plain) {
         panic(msg: "aead::openInto: `into` must be ciphertext.length() - MACBYTES");
     }
-    UnsafePtr<uint8> m = plain == 0 ? addr(of: ciphertext[0]) : addr(of: into[0]);
-    UnsafePtr<uint8> a = ad.length() == 0 ? addr(of: ciphertext[0]) : addr(of: ad[0]);
+    // The plaintext may be empty (a ciphertext that is a bare MAC), and `into` is then zero-length
+    // with no address to give. A one-byte cell stands in as the destination; libsodium writes none of
+    // it. The ciphertext is never the destination -- it is read-only now, and always was in fact.
+    InlineArray<uint8>#(1) unused = [0; 1];
+    UnsafePtr<uint8> m = unused.dataPtrMut();
+    if (plain != 0) { m = addr(of: into[0]); }
+    UnsafeConstPtr<uint8> a = addr(of: ciphertext[0]);
+    if (ad.length() != 0) { a = addr(of: ad[0]); }
     int32 rc = kama_sodium_aead_decrypt(m: m, c: addr(of: ciphertext[0]), clen: cast<uint64>(ciphertext.length()),
                                         ad: a, adlen: cast<uint64>(ad.length()), npub: nonce.raw(), k: key.raw());
     if (rc != 0) { return Result::Err(error: SodiumError::Forged); }
     return Result::Ok(value: plain);
 }
 
-unsafe fn FixedArray<uint8> seal(View<uint8> message, View<uint8> ad, const ref Nonce nonce, const ref Key key) {
+unsafe fn FixedArray<uint8> seal(ConstView<uint8> message, ConstView<uint8> ad, const ref Nonce nonce, const ref Key key) {
     FixedArray<uint8> buf = FixedArray::<uint8>.make(size: message.length() + MACBYTES);
-    isize n = sealInto(into: buf.view(), message: message, ad: ad, nonce: nonce, key: key);
+    isize n = sealInto(into: buf.viewMut(), message: message, ad: ad, nonce: nonce, key: key);
     return buf;
 }
 
-unsafe fn Result<FixedArray<uint8>, SodiumError> open(View<uint8> ciphertext, View<uint8> ad,
+unsafe fn Result<FixedArray<uint8>, SodiumError> open(ConstView<uint8> ciphertext, ConstView<uint8> ad,
                                                       const ref Nonce nonce, const ref Key key) {
     if (ciphertext.length() < MACBYTES) {
         return Result::Err(error: SodiumError::BadLength(expected: MACBYTES, got: ciphertext.length()));
     }
     FixedArray<uint8> buf = FixedArray::<uint8>.make(size: ciphertext.length() - MACBYTES);
-    match (openInto(into: buf.view(), ciphertext: ciphertext, ad: ad, nonce: nonce, key: key)) {
+    match (openInto(into: buf.viewMut(), ciphertext: ciphertext, ad: ad, nonce: nonce, key: key)) {
         case Ok(value: n):  { return Result::Ok(value: buf); }
         case Err(error: e): { return Result::Err(error: e); }
     };

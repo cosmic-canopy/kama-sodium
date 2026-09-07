@@ -76,11 +76,11 @@ fn int32 kxTests() {
     FixedArray<uint8> pk1 = FixedArray::<uint8>.make(size: 32);
     FixedArray<uint8> pk2 = FixedArray::<uint8>.make(size: 32);
     match (KeyPair.fromSeed(seed: seed.view())) {
-        case Ok(value: p):  { p.publicKey().exportTo(into: pk1.view()); }
+        case Ok(value: p):  { p.publicKey().exportTo(into: pk1.viewMut()); }
         case Err(error: e): { f = f + check(ok: false, what: "kx: fromSeed"); }
     };
     match (KeyPair.fromSeed(seed: seed.view())) {
-        case Ok(value: p):  { p.publicKey().exportTo(into: pk2.view()); }
+        case Ok(value: p):  { p.publicKey().exportTo(into: pk2.viewMut()); }
         case Err(error: e): { f = f + check(ok: false, what: "kx: fromSeed again"); }
     };
     f = f + check(ok: equalsConstantTime(a: pk1.view(), b: pk2.view()), what: "kx: the same seed gives the same pair");

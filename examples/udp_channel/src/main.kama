@@ -17,7 +17,7 @@ import { sodium::SodiumError, sodium::Nonce, sodium::equalsConstantTime,
          sodium::kx::KeyPair, sodium::kx::PublicKey, sodium::kx::SessionKeys, sodium::kx::Direction,
          sodium::kx::clientSessionKeys, sodium::kx::serverSessionKeys,
          sodium::aead::Key, sodium::aead::MACBYTES, sodium::aead::sealInto, sodium::aead::openInto,
-         std::collections::View, std::collections::FixedArray };
+         std::collections::View, std::collections::ConstView, std::collections::FixedArray };
 
 comptime isize HEADER = 8;   // the sequence number, little-endian
 
@@ -26,10 +26,10 @@ type resource Sender {
     Key key;
     uint64 next;
 
-    public unsafe ctor make(ref SessionKeys keys) { this.key = Key.fromSession(keys: keys, direction: Direction::Tx); this.next = 0ui64; }
+    public unsafe ctor make(const ref SessionKeys keys) { this.key = Key.fromSession(keys: keys, direction: Direction::Tx); this.next = 0ui64; }
 
     // header ‖ ciphertext into `packet` (HEADER + payload + MACBYTES bytes). Answers the bytes written.
-    public unsafe fn isize send(View<uint8> payload, View<uint8> packet) {
+    public unsafe fn isize send(ConstView<uint8> payload, View<uint8> packet) {
         if (packet.length() != HEADER + payload.length() + MACBYTES) { panic(msg: "send: packet buffer size"); }
         FixedArray<uint8> nonceBytes = FixedArray::<uint8>.make(size: 24);
         isize i = 0;
@@ -40,8 +40,11 @@ type resource Sender {
             i = i + 1;
         }
         Nonce nonce = match (Nonce.fromBytes(bytes: nonceBytes.view())) { case Ok(value: n): n; case Err(error: e): { panic(msg: "nonce"); return 0; } };
+        // Two windows into the same buffer: the body is WRITTEN, so it stays a `View` (`slice` on a
+        // `View` is already the writable sub-range); the header is only READ as associated data, so it
+        // is narrowed first — `view().slice(…)` is the read-only sub-range.
         isize n = sealInto(into: packet.slice(from: HEADER, count: packet.length() - HEADER), message: payload,
-                           ad: packet.slice(from: 0, count: HEADER), nonce: nonce, key: this.key);
+                           ad: packet.view().slice(from: 0, count: HEADER), nonce: nonce, key: this.key);
         this.next = this.next + 1ui64;
         return HEADER + n;
     }
@@ -51,11 +54,11 @@ type resource Receiver {
     Key key;
     uint64 expected;
 
-    public unsafe ctor make(ref SessionKeys keys) { this.key = Key.fromSession(keys: keys, direction: Direction::Rx); this.expected = 0ui64; }
+    public unsafe ctor make(const ref SessionKeys keys) { this.key = Key.fromSession(keys: keys, direction: Direction::Rx); this.expected = 0ui64; }
 
     // The payload, or an error: a replayed/old sequence number is refused before any cryptography,
     // and a packet whose header or body was altered is `Forged`.
-    public unsafe fn Result<isize, SodiumError> receive(View<uint8> packet, View<uint8> payload) {
+    public unsafe fn Result<isize, SodiumError> receive(ConstView<uint8> packet, View<uint8> payload) {
         if (packet.length() < HEADER + MACBYTES) {
             return Result::Err(error: SodiumError::BadLength(expected: HEADER + MACBYTES, got: packet.length()));
         }
@@ -97,35 +100,35 @@ fn int32 main() {
     while (seqNo < 3) {
         isize i = 0;
         while (i < 20) { payload[i] = truncate<uint8>(cast<isize>(seqNo) * 20 + i); i = i + 1; }
-        isize n = up.send(payload: payload.view(), packet: packet.view());
-        match (upRx.receive(packet: packet.view(), payload: got.view())) {
+        isize n = up.send(payload: payload.view(), packet: packet.viewMut());
+        match (upRx.receive(packet: packet.viewMut(), payload: got.viewMut())) {
             case Ok(value: len): { if (!equalsConstantTime(a: got.view(), b: payload.view())) { println(s: "up: payload differs"); return 3; } }
             case Err(error: e): { println(s: "up: refused a good packet"); return 4; }
         };
         seqNo = seqNo + 1;
     }
     // A replay of the last packet is refused (by sequence, before decrypting).
-    match (upRx.receive(packet: packet.view(), payload: got.view())) {
+    match (upRx.receive(packet: packet.viewMut(), payload: got.viewMut())) {
         case Ok(value: len): { println(s: "up: a replay was accepted"); return 5; }
         case Err(error: e): { }
     };
     // A packet with its header altered (a different sequence number) fails to open: the header is
     // authenticated as associated data, and the nonce it also serves as no longer matches.
-    isize m = up.send(payload: payload.view(), packet: packet.view());
+    isize m = up.send(payload: payload.view(), packet: packet.viewMut());
     packet[0] = packet[0] ^ 1ui8;
-    match (upRx.receive(packet: packet.view(), payload: got.view())) {
+    match (upRx.receive(packet: packet.viewMut(), payload: got.viewMut())) {
         case Ok(value: len): { println(s: "up: an altered header was accepted"); return 6; }
         case Err(error: e): { }
     };
     // The other direction, with its own keys.
-    isize d = down.send(payload: payload.view(), packet: packet.view());
-    match (downRx.receive(packet: packet.view(), payload: got.view())) {
+    isize d = down.send(payload: payload.view(), packet: packet.viewMut());
+    match (downRx.receive(packet: packet.viewMut(), payload: got.viewMut())) {
         case Ok(value: len): { if (!equalsConstantTime(a: got.view(), b: payload.view())) { println(s: "down: payload differs"); return 7; } }
         case Err(error: e): { println(s: "down: refused a good packet"); return 8; }
     };
     // ...and a client packet cannot be opened as if it were the server's (rx != tx).
-    isize u = up.send(payload: payload.view(), packet: packet.view());
-    match (downRx.receive(packet: packet.view(), payload: got.view())) {
+    isize u = up.send(payload: payload.view(), packet: packet.viewMut());
+    match (downRx.receive(packet: packet.viewMut(), payload: got.viewMut())) {
         case Ok(value: len): { println(s: "down: opened an uplink packet"); return 9; }
         case Err(error: e): { }
     };

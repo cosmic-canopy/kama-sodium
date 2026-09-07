@@ -1,4 +1,4 @@
-import { sodium::SodiumError, sodium::ready, std::collections::View };
+import { sodium::SodiumError, sodium::ready, std::collections::View, std::collections::ConstView };
 export { PublicKey, SecretKey, KeyPair, Signature,
          PUBLICKEYBYTES, SECRETKEYBYTES, BYTES, SEEDBYTES, sign, verify };
 
@@ -32,7 +32,7 @@ type value PublicKey {
     // mints one fills it before it leaves.
     public ctor zeroed() { this.bytes = [0; 32]; }
 
-    public unsafe ctor Result<PublicKey, SodiumError> fromBytes(View<uint8> bytes) {
+    public unsafe ctor Result<PublicKey, SodiumError> fromBytes(ConstView<uint8> bytes) {
         if (bytes.length() != PUBLICKEYBYTES) {
             return Result::Err(error: SodiumError::BadLength(expected: PUBLICKEYBYTES, got: bytes.length()));
         }
@@ -65,7 +65,7 @@ type resource SecretKey {
     // mints one fills it before it leaves.
     public ctor zeroed() { this.bytes = [0; 64]; }
 
-    public unsafe ctor Result<SecretKey, SodiumError> fromBytes(View<uint8> bytes) {
+    public unsafe ctor Result<SecretKey, SodiumError> fromBytes(ConstView<uint8> bytes) {
         if (bytes.length() != SECRETKEYBYTES) {
             return Result::Err(error: SodiumError::BadLength(expected: SECRETKEYBYTES, got: bytes.length()));
         }
@@ -125,7 +125,7 @@ type resource KeyPair {
         int32 rc = crypto_sign_keypair(pk: this.pk.rawMut(), sk: this.sk.rawMut());
     }
 
-    public unsafe ctor Result<KeyPair, SodiumError> fromSeed(View<uint8> seed) {
+    public unsafe ctor Result<KeyPair, SodiumError> fromSeed(ConstView<uint8> seed) {
         if (seed.length() != SEEDBYTES) {
             return Result::Err(error: SodiumError::BadLength(expected: SEEDBYTES, got: seed.length()));
         }
@@ -144,7 +144,7 @@ type value Signature {
     // mints one fills it before it leaves.
     public ctor zeroed() { this.bytes = [0; 64]; }
 
-    public unsafe ctor Result<Signature, SodiumError> fromBytes(View<uint8> bytes) {
+    public unsafe ctor Result<Signature, SodiumError> fromBytes(ConstView<uint8> bytes) {
         if (bytes.length() != BYTES) {
             return Result::Err(error: SodiumError::BadLength(expected: BYTES, got: bytes.length()));
         }
@@ -166,7 +166,7 @@ type value Signature {
 }
 
 // Sign `message` with the pair's secret key. Deterministic: the same key and message give the same signature.
-unsafe fn Signature sign(View<uint8> message, const ref KeyPair key) {
+unsafe fn Signature sign(ConstView<uint8> message, const ref KeyPair key) {
     ready();
     Signature s = Signature.zeroed();
     // An empty message is signable. libsodium takes a pointer it will not read for mlen 0, and a View
@@ -181,7 +181,7 @@ unsafe fn Signature sign(View<uint8> message, const ref KeyPair key) {
 
 // Does `signature` sign `message` under the pair whose public half is `key`? `false` for a forged or
 // altered signature, an altered message, or another signer.
-unsafe fn bool verify(const ref Signature signature, View<uint8> message, const ref PublicKey key) {
+unsafe fn bool verify(const ref Signature signature, ConstView<uint8> message, const ref PublicKey key) {
     ready();
     UnsafeConstPtr<uint8> m = signature.raw();
     if (message.length() != 0) { m = addr(of: message[0]); }

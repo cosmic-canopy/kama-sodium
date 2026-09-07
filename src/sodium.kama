@@ -1,4 +1,4 @@
-import { std::collections::View };
+import { std::collections::View, std::collections::ConstView };
 export { SodiumError, Nonce, NONCEBYTES, ready, memzero, equalsConstantTime, version };
 
 // @kama/sodium — libsodium, bound. Nothing cryptographic is written here: every primitive is
@@ -75,7 +75,7 @@ type value Nonce {
         randombytes_buf(buf: this.bytes.dataPtrMut(), size: cast<usize>(NONCEBYTES));
     }
 
-    public unsafe ctor Result<Nonce, SodiumError> fromBytes(View<uint8> bytes) {
+    public unsafe ctor Result<Nonce, SodiumError> fromBytes(ConstView<uint8> bytes) {
         if (bytes.length() != NONCEBYTES) {
             return Result::Err(error: SodiumError::BadLength(expected: NONCEBYTES, got: bytes.length()));
         }
@@ -118,7 +118,7 @@ unsafe fn void memzero(View<uint8> bytes) {
 // Equality that takes the same time whether the first byte or the last one differs. For comparing a
 // MAC, a token or a key — anything an attacker could learn from the timing of `==`. Two lengths that
 // differ are unequal at once: the length is not the secret.
-unsafe fn bool equalsConstantTime(View<uint8> a, View<uint8> b) {
+unsafe fn bool equalsConstantTime(ConstView<uint8> a, ConstView<uint8> b) {
     if (a.length() != b.length()) { return false; }
     if (a.length() == 0) { return true; }
     return sodium_memcmp(b1: addr(of: a[0]), b2: addr(of: b[0]), len: cast<usize>(a.length())) == 0;

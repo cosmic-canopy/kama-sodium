@@ -1,4 +1,4 @@
-import { sodium::SodiumError, sodium::ready, std::collections::View };
+import { sodium::SodiumError, sodium::ready, std::collections::View, std::collections::ConstView };
 export { PublicKey, SecretKey, KeyPair, SessionKey, SessionKeys, Direction,
          PUBLICKEYBYTES, SECRETKEYBYTES, SESSIONKEYBYTES, SEEDBYTES,
          clientSessionKeys, serverSessionKeys };
@@ -38,7 +38,7 @@ type value PublicKey {
     // mints one fills it before it leaves.
     public ctor zeroed() { this.bytes = [0; 32]; }
 
-    public unsafe ctor Result<PublicKey, SodiumError> fromBytes(View<uint8> bytes) {
+    public unsafe ctor Result<PublicKey, SodiumError> fromBytes(ConstView<uint8> bytes) {
         if (bytes.length() != PUBLICKEYBYTES) {
             return Result::Err(error: SodiumError::BadLength(expected: PUBLICKEYBYTES, got: bytes.length()));
         }
@@ -70,7 +70,7 @@ type resource SecretKey {
     // mints one fills it before it leaves.
     public ctor zeroed() { this.bytes = [0; 32]; }
 
-    public unsafe ctor Result<SecretKey, SodiumError> fromBytes(View<uint8> bytes) {
+    public unsafe ctor Result<SecretKey, SodiumError> fromBytes(ConstView<uint8> bytes) {
         if (bytes.length() != SECRETKEYBYTES) {
             return Result::Err(error: SodiumError::BadLength(expected: SECRETKEYBYTES, got: bytes.length()));
         }
@@ -132,7 +132,7 @@ type resource KeyPair {
         int32 rc = crypto_kx_keypair(pk: this.pk.rawMut(), sk: this.sk.rawMut());
     }
 
-    public unsafe ctor Result<KeyPair, SodiumError> fromSeed(View<uint8> seed) {
+    public unsafe ctor Result<KeyPair, SodiumError> fromSeed(ConstView<uint8> seed) {
         if (seed.length() != SEEDBYTES) {
             return Result::Err(error: SodiumError::BadLength(expected: SEEDBYTES, got: seed.length()));
         }

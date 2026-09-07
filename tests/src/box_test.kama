@@ -61,10 +61,10 @@ fn int32 boxTests() {
 
     // The `into` forms.
     FixedArray<uint8> outBuf = FixedArray::<uint8>.make(size: 56);
-    isize wrote = sealInto(into: outBuf.view(), message: msg.view(), nonce: nonce, to: bobPk, from: alice);
+    isize wrote = sealInto(into: outBuf.viewMut(), message: msg.view(), nonce: nonce, to: bobPk, from: alice);
     f = f + check(ok: wrote == 56 && equalsConstantTime(a: outBuf.view(), b: boxed.view()), what: "box: sealInto matches seal");
     FixedArray<uint8> plainBuf = FixedArray::<uint8>.make(size: 40);
-    match (openInto(into: plainBuf.view(), ciphertext: outBuf.view(), nonce: nonce, from: alicePk, to: bob)) {
+    match (openInto(into: plainBuf.viewMut(), ciphertext: outBuf.view(), nonce: nonce, from: alicePk, to: bob)) {
         case Ok(value: n):  { f = f + check(ok: n == 40 && equalsConstantTime(a: plainBuf.view(), b: msg.view()), what: "box: openInto round trip"); }
         case Err(error: e): { f = f + check(ok: false, what: "box: openInto failed"); }
     };
@@ -86,11 +86,11 @@ fn int32 boxTests() {
     FixedArray<uint8> pk1 = FixedArray::<uint8>.make(size: 32);
     FixedArray<uint8> pk2 = FixedArray::<uint8>.make(size: 32);
     match (KeyPair.fromSeed(seed: seed.view())) {
-        case Ok(value: p):  { p.publicKey().exportTo(into: pk1.view()); }
+        case Ok(value: p):  { p.publicKey().exportTo(into: pk1.viewMut()); }
         case Err(error: e): { f = f + check(ok: false, what: "box: fromSeed"); }
     };
     match (KeyPair.fromSeed(seed: seed.view())) {
-        case Ok(value: p):  { p.publicKey().exportTo(into: pk2.view()); }
+        case Ok(value: p):  { p.publicKey().exportTo(into: pk2.viewMut()); }
         case Err(error: e): { f = f + check(ok: false, what: "box: fromSeed again"); }
     };
     f = f + check(ok: equalsConstantTime(a: pk1.view(), b: pk2.view()), what: "box: the same seed gives the same pair");
