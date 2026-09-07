@@ -156,9 +156,8 @@ If a doc and the compiler disagree, the compiler is right and the doc is a bug w
 
 ## This package — @kama/sodium
 
-**Read [docs/ROADMAP.md](docs/ROADMAP.md) first.** It is the order of work and what this repo is waiting on from
-the compiler. kama `0.9.204`–`0.9.208` superseded two of the bullets below (each marked `⚠️ kama ≤ …` —
-true when written, now a roadmap row); rewrite a bullet when its row ships, not before.
+**Read [docs/ROADMAP.md](docs/ROADMAP.md) first.** It is the order of work and what this repo is still
+waiting on from the compiler. This package needs **kama ≥ 0.9.208**, declared as `"kama"` in the manifest.
 
 What is true here and nowhere else, learned building it (the first external kama package):
 
@@ -170,16 +169,24 @@ What is true here and nowhere else, learned building it (the first external kama
   Do not hand-edit either; change `VERSION`/`SHA256` in the script and run it.
 - **Every size is spelled twice on purpose:** a `comptime isize` in the module and a `_Static_assert`
   in `csrc/kama_sodium.c`. Add both when binding a new primitive.
-- **Keys go by `ref`, pairs go whole.** ⚠️ kama ≤ 0.9.203 — since 0.9.205 `dataPtr()` is `const fn` and
-  returns the read-only `UnsafeConstPtr<uint8>`, so keys and nonces go by `const ref` (ROADMAP rows 1–2).
-  Still true: a `resource`'s fields are always private, and a `ref`-returning call cannot feed a `ref`
-  parameter — so operations take `ref KeyPair`, and `pair.publicKey()` is copied to a local before it
-  is passed anywhere.
+- **Keys go by `const ref`, pairs go whole.** Every byte-holder has a `public unsafe const fn
+  UnsafeConstPtr<uint8> raw()`; the eight whose bytes are filled from OUTSIDE the type (a `KeyPair` ctor
+  cannot reach `this.pk.bytes` — a field is private to its own type) also have a non-const `rawMut()`.
+  A `resource`'s fields are always private, so operations take `const ref KeyPair` and `publicKey()`
+  answers a `PublicKey` by value.
+- **A non-const `ref` parameter refuses a temporary** — "its mutation would be lost; bind it to a local
+  first". A `const ref` takes one fine. That is a deliberate rule, not a gap: the fix is `const ref`,
+  never a local bound only to get past it.
+- **The extern side of the C seam is spelled from the C header, not guessed.** An input libsodium
+  declares `const unsigned char *` is an `UnsafeConstPtr<uint8>`; an output stays `UnsafePtr<uint8>`.
+  Getting this wrong in the read-only direction is SILENT — kama emits no prototype for an extern, and
+  `uint8_t *` into a `const uint8_t *` parameter is legal C — so a green build proves nothing here.
+  Read `csrc/kama_sodium.h` or `third_party/libsodium/.../sodium/*.h` for every one. The extern-agreement
+  rule does catch a symbol declared two ways across files (`crypto_scalarmult_base` is in two).
 - **`zeroed()` constructors are public** because member visibility is per type, not per file/module,
   and the free functions that fill them live outside the type.
-- **A module's names are module-wide even when not exported** — ⚠️ kama ≤ 0.9.206; since 0.9.207 a
-  file-private name is keyed by its file, so two files may each keep a private `knownAnswer` (ROADMAP
-  row 4 drops the per-file prefixes).
+- **A non-exported name is private to its FILE**, not to its module (kama ≥ 0.9.207), so the four
+  `*_test.kama` files each keep their own private `knownAnswer`.
 - **Unwrapping a `Result`:** a value payload is copied out of a borrowing `match (r)`; a resource
   payload leaves a consuming `match (give r)` by `give x`. A `Result` over a dtor-less resource needed
   a compiler fix (kama 0.9.200) to be move-tracked at all.

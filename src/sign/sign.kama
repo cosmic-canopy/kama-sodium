@@ -88,17 +88,17 @@ type resource SecretKey {
 }
 
 type resource KeyPair {
-    // A field of a `resource` is always private in kama, and a `ref`-returning accessor cannot feed a
-    // `ref` parameter (a call result is a temporary). So the operations take the PAIR by `ref`, the
-    // public half is read out as a value (`PublicKey pk = pair.publicKey();` — what goes on the wire),
-    // and the secret half never leaves except through `exportSecretKeyTo`, for storage.
+    // A field of a `resource` is always private in kama, so the pair is what the operations take —
+    // by `const ref`, since they only read it. The public half is read out as a value
+    // (`PublicKey pk = pair.publicKey();` — what goes on the wire) and the secret half never leaves
+    // except through `exportSecretKeyTo`, for storage.
     PublicKey pk;
     SecretKey sk;
 
-    // By value, not `ref`: a PublicKey is 32 bytes and a `type value`, so a copy is what a caller
-    // wants anyway — and a `ref`-returning call cannot feed a `ref` parameter (the result is a
-    // temporary), which used to force every caller to bind it to a local first. Copying also makes it
-    // reachable from a `const ref KeyPair`.
+    // By value, not `ref`: a PublicKey is 32 bytes and a `type value`, so the copy is what a caller
+    // wants anyway, and it makes the accessor reachable from a `const ref KeyPair`. A non-const `ref`
+    // parameter still refuses a temporary — by design, since the mutation would be lost — but nothing
+    // here takes a public key that way any more.
     public const fn PublicKey publicKey() { return this.pk; }
 
     // For the module's own operations (a free function cannot read a private field, even in this file).

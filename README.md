@@ -8,6 +8,9 @@ is libsodium's, and what this package adds is the types that make misuse a compi
 kama pkg add kama.json @kama/sodium --path ../kama-sodium     # today: a path dependency
 ```
 
+Needs **kama ≥ 0.9.208** — declared as `"kama": ">=0.9.208"` in the manifest, so `kama pkg install` and
+`kama build` both refuse an older compiler by name rather than failing somewhere inside the source.
+
 ```kama
 import { sodium::Nonce, sodium::aead::Key, sodium::aead::seal, sodium::aead::open,
          std::collections::FixedArray };
@@ -50,11 +53,14 @@ associated data — `examples/udp_channel/` is that shape end to end.
   buffer of the wrong size panics, exactly like an index out of range.
 - **Two forms per operation.** `sealInto(into:, …)` writes a caller's buffer and allocates nothing —
   the per-packet form — and `seal(…)` allocates a `FixedArray<uint8>` on top of it.
-- **Keys are passed by `ref`, not `const ref`.** kama has no const raw pointer and refuses `addr(of:)` on
-  a const receiver ("const is deep"), so a buffer can only reach C through a mutable borrow.
-- **A key pair is taken whole.** A field of a `resource` is always private, and a `ref`-returning
-  accessor cannot feed a `ref` parameter, so `box`/`sign`/`kx` take `ref KeyPair`; the public half is
-  read out as a value (`PublicKey pk = pair.publicKey();`), which is what goes on the wire.
+- **Keys and nonces are passed by `const ref`.** An operation that only reads a key cannot mutate it,
+  and says so in its signature. Each type's `raw()` is a `const fn` answering `UnsafeConstPtr<uint8>` —
+  the same read-only pointer libsodium's own prototypes take — so a caller holding a `const` key never
+  has to drop the `const` to use it. The writable half (`rawMut()`) exists only where a constructor has
+  to hand libsodium a buffer to fill, and a `const ref` holder cannot reach it.
+- **A key pair is taken whole.** A field of a `resource` is always private, so `box`/`sign`/`kx` take
+  `const ref KeyPair`; the public half comes out as a value (`PublicKey pk = pair.publicKey();`), which
+  is what goes on the wire.
 - **`kx` → channel with no plaintext copy:** `aead::Key.fromSession(keys:, direction:)`.
 
 ## What is vendored, and why
