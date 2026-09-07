@@ -1,11 +1,11 @@
 {
   "name": "@kama/sodium",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "kind": "library",
+  "kama": ">=0.9.208",
   "modules": {
     ".":         { "visibility": "public" },
-    "native":    { "visibility": "internal" },
     "secretbox": { "visibility": "public" },
     "aead":      { "visibility": "public" },
     "box":       { "visibility": "public" },

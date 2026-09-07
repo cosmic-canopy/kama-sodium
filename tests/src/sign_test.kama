@@ -6,7 +6,7 @@ import { sodium::SodiumError, sodium::equalsConstantTime,
          std::collections::View, std::collections::FixedArray, std::collections::DynamicArray };
 export { signTests };
 
-fn int32 signKnownAnswer() {
+fn int32 knownAnswer() {
     // RFC 8032 § 7.1, test 2: seed, public key, a one-byte message, its signature.
     DynamicArray<uint8> seed = unhex(text: "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb");
     DynamicArray<uint8> pkb  = unhex(text: "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c");
@@ -33,7 +33,7 @@ fn int32 signKnownAnswer() {
 fn int32 signTests() {
     int32 f = 0;
     f = f + check(ok: PUBLICKEYBYTES == 32 && SECRETKEYBYTES == 64 && BYTES == 64 && SEEDBYTES == 32, what: "sign: sizes");
-    f = f + signKnownAnswer();
+    f = f + knownAnswer();
 
     KeyPair signer = KeyPair.random();
     KeyPair other = KeyPair.random();

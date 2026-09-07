@@ -5,7 +5,7 @@ import { sodium::SodiumError, sodium::Nonce, sodium::equalsConstantTime,
          std::collections::View, std::collections::FixedArray, std::collections::DynamicArray };
 export { aeadTests };
 
-fn int32 aeadKnownAnswer() {
+fn int32 knownAnswer() {
     // libsodium's own vector (test/default/aead_xchacha20poly1305.c): firstkey / nonce / m / ad -> c.
     DynamicArray<uint8> kb = unhex(text: "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
     DynamicArray<uint8> nb = unhex(text: "07000000404142434445464748494a4b4c4d4e4f50515253");
@@ -29,7 +29,7 @@ fn int32 aeadKnownAnswer() {
 fn int32 aeadTests() {
     int32 f = 0;
     f = f + check(ok: KEYBYTES == 32 && MACBYTES == 16, what: "aead: sizes");
-    f = f + aeadKnownAnswer();
+    f = f + knownAnswer();
 
     Key key = Key.random();
     Nonce nonce = Nonce.random();
