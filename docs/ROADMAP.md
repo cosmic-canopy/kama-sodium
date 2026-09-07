@@ -91,7 +91,7 @@ emitting prototypes it deliberately does not emit.
 
 Publishing works today only against a `file://` registry — `kama publish kama.json --registry
 file:///tmp/kreg`, then a consumer with `"@kama/sodium": { "version": "^0.3.0", "registry": … }`. That
-round trip is proven for `0.2.0`: resolve, unpack, compile the vendored libsodium, link, run. Everything
+round trip is proven for `0.3.0`: resolve, unpack, compile the vendored libsodium, link, run. Everything
 missing is host-side, in `../cstar`:
 
 - **LATER row 21 — hosted registry deployment (M3.3).** Everything below gates on a live host; the
