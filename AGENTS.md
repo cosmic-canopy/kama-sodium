@@ -162,9 +162,11 @@ waiting on from the compiler. This package needs **kama ≥ 0.9.208**, declared 
 What is true here and nowhere else, learned building it (the first external kama package):
 
 - **Run `tools/test.sh`** (`KAMA=/path/to/kama` if `kama` is not on the PATH). It builds `tests/`
-  debug and release; a failing case prints its name. Test vectors come from
+  debug and release and then the example; a failing case prints its name. Test vectors come from
   `third_party/libsodium/../test/default` in the upstream tarball — never type one from memory; the
   first attempt at the aead vector was wrong.
+- **`tools/test-wasm.sh` is the other half of the gate** — the same two programs on `--target WASM`
+  under node, in a container with emcc. A change to `src/` or `csrc/` is not proven until both pass.
 - **`tools/vendor-libsodium.sh` owns `third_party/libsodium/` and the `csources` block of kama.json.**
   Do not hand-edit either; change `VERSION`/`SHA256` in the script and run it.
 - **Every size is spelled twice on purpose:** a `comptime isize` in the module and a `_Static_assert`

@@ -90,11 +90,15 @@ spells as a literal, so a libsodium upgrade that changed one fails at compile ti
 
 ## Tests
 
-`tools/test.sh` builds `tests/` (one program over all six modules) in debug and release and runs it.
-Round trips; a flipped byte, the wrong key, the wrong nonce and altered associated data are `Forged`;
-short inputs are `BadLength`; the `into` forms match the allocating ones; empty messages; seeded pairs
-are deterministic; and a known-answer vector per primitive from libsodium's own `test/default/` (RFC
-8032 for Ed25519), extracted from the vendored tarball by script.
+`tools/test.sh` builds `tests/` (one program over all six modules) in debug and release, runs it, then
+builds and runs `examples/udp_channel`. Round trips; a flipped byte, the wrong key, the wrong nonce and
+altered associated data are `Forged`; short inputs are `BadLength`; the `into` forms match the allocating
+ones; empty messages; seeded pairs are deterministic; and a known-answer vector per primitive from
+libsodium's own `test/default/` (RFC 8032 for Ed25519), extracted from the vendored tarball by script.
+
+`tools/test-wasm.sh` runs the same two programs built for wasm under node, in a container with emcc.
+That is the leg vendoring buys: there is no system libsodium for wasm, so a package linking `-lsodium`
+could not run there at all. Same source, same define list, entropy from the web crypto API.
 
 ## Not here yet
 
