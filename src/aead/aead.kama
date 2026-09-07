@@ -30,10 +30,9 @@ extern fn void  sodium_memzero(UnsafePtr<uint8> pnt, usize len);
 type resource Key {
     InlineArray<uint8>#(32) bytes;
 
-    // All-zero bytes, to be filled. Public because kama's member visibility is per TYPE (there is no
-    // module-internal tier), and the functions that fill it live outside the type; every path that
-    // mints one fills it before it leaves.
-    public ctor zeroed() { this.bytes = [0; 32]; }
+    // All-zero bytes, to be filled by the constructor that mints one. Private: every path that mints
+    // a key fills it before it leaves, and a zero key is not a thing a caller should be able to make.
+    ctor zeroed() { this.bytes = [0; 32]; }
 
     public unsafe ctor random() {
         ready();
@@ -67,7 +66,11 @@ type resource Key {
     // The bytes, for libsodium: read-only and `const`, so a `const ref Key` can reach C. Every path
     // that WRITES them (`random`, `fromSession`, the destructor) is inside the type and uses
     // `dataPtrMut()` directly, so there is no writable accessor to hand out.
-    public unsafe const fn UnsafeConstPtr<uint8> raw() { return this.bytes.dataPtr(); }
+    // Not public: a raw pointer into a key is this package's business. Only the two operations that
+    // hand one to libsodium may ask.
+    friend sodium::aead::sealInto[raw];
+    friend sodium::aead::openInto[raw];
+    unsafe const fn UnsafeConstPtr<uint8> raw() { return this.bytes.dataPtr(); }
 
     unsafe ~Key() { sodium_memzero(pnt: this.bytes.dataPtrMut(), len: cast<usize>(KEYBYTES)); }
 }

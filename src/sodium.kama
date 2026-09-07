@@ -64,10 +64,9 @@ type enum SodiumError implements Error {
 type value Nonce {
     InlineArray<uint8>#(24) bytes;
 
-    // All-zero bytes, to be filled. Public because kama's member visibility is per TYPE (there is no
-    // module-internal tier), and the functions that fill it live outside the type; every path that
-    // mints one fills it before it leaves.
-    public ctor zeroed() { this.bytes = [0; 24]; }
+    // All-zero bytes, to be filled by the constructor that mints one. Private: nothing outside this
+    // type ever needs a zero nonce, and every path that mints one fills it before it leaves.
+    ctor zeroed() { this.bytes = [0; 24]; }
 
     public unsafe ctor random() {
         ready();
@@ -99,6 +98,17 @@ type value Nonce {
     // The bytes, for libsodium. Read-only and `const`, so a `const ref Nonce` can reach C: libsodium
     // only reads a nonce, and `UnsafeConstPtr<uint8>` is how that is said. The one path that WRITES
     // these bytes is `increment()`, inside the type, through `dataPtrMut()`.
+    //
+    // ⚠️ `public` under protest, and the ONE accessor in this package that is. It wants to be six
+    // `friend` grants -- `sodium::{aead,secretbox,box}::{sealInto,openInto}` -- and those compile.
+    // But a grant to a symbol in a sibling module is a hard error when that module is not part of the
+    // program being built, and `Nonce` lives in the ROOT module that every consumer imports. Granting
+    // from here would drag aead + secretbox + box into every build that touches a nonce, which is the
+    // whole package. See KAMA_GAPS.md #2; make this private the day that is fixed.
+    //
+    // Every OTHER private accessor in this package is `friend`-granted, including two that do cross a
+    // module boundary (`SessionKeys.copyInto`), because those grant leaf-ward and the forced import is
+    // one a `kx` consumer wants anyway.
     public unsafe const fn UnsafeConstPtr<uint8> raw() { return this.bytes.dataPtr(); }
 }
 

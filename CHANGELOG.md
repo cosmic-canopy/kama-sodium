@@ -3,6 +3,39 @@
 All notable changes to `@kama/sodium`. The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-09-07
+
+The read-only-window release, and the one where the package stopped exposing its own internals.
+Needs **kama ≥ 0.9.214**.
+
+### Changed — BREAKING
+
+- **Every parameter that only reads bytes is now `ConstView<uint8>`**, where it was `View<uint8>`:
+  `seal`/`open`/`sealInto`/`openInto`'s `message`, `ciphertext` and `ad`, `sign`/`verify`'s `message`,
+  every `fromBytes`/`fromSeed`, and `equalsConstantTime`'s operands. Callers passing `x.view()` need no
+  change — that is what `view()` now mints.
+- **Writable parameters stay `View<uint8>` and callers must say `viewMut()`**: every `into`, plus
+  `exportTo`, `exportSecretKeyTo`, `memzero` and `random::fill`. A `view()` at one of those is a
+  compile error naming `viewMut()`.
+- **`raw()`, `rawMut()`, `zeroed()`, `rawPublicKey()`, `rawSecretKey()`, `rawRxMut()`, `rawTxMut()`,
+  `copyInto()` and `copyRawInto()` are no longer public.** They are private, `friend`-granted to the
+  specific operations that need them. Nothing in `tests/` or `examples/` used any of them, so no
+  consumer should notice; a consumer that reached for a raw pointer into a key now cannot.
+  `Nonce.raw()` remains public for one reason, recorded in `KAMA_GAPS.md` #2.
+- **Minimum compiler is kama 0.9.214** (`ConstView<T>` and the `view()`/`viewMut()` split).
+
+### Fixed
+
+- The empty-plaintext decrypt path handed libsodium the **ciphertext buffer as its output pointer**,
+  because a zero-length `into` has no address to give. It was never written through, but it was a lie
+  in the types and is now a type error. A one-byte stack cell stands in.
+
+### Added
+
+- `tools/test-wasm.sh` — the wasm/node leg as a script.
+- `KAMA_GAPS.md` — three compiler gaps this package hit, each with a runnable reproducer, plus three
+  things checked and found NOT to be gaps.
+
 ## [0.2.0] — 2026-09-06
 
 The const-pointer release. kama 0.9.204 and 0.9.205 gave the language a read-only raw pointer

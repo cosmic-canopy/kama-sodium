@@ -6,10 +6,14 @@
 takes it as `KAMA=<path>`. Check `kama --version` before assuming any row below — every row names the
 compiler version it needs.
 
-## Where this is (2026-09-06)
+## Where this is (2026-09-07)
 
-`0.2.0`, built and tested on kama **0.9.209**, with a declared floor of `>=0.9.208`. Six modules,
+`0.3.0`, built and tested on kama **0.9.214**, with a declared floor of `>=0.9.214`. Six modules,
 libsodium 1.0.20 vendored, every primitive proven against libsodium's own vectors.
+
+**Nothing is blocked any more.** The `ConstView<T>` row shipped in 0.9.213/0.9.214 and was this
+package's last dependency on the compiler. What it hit while consuming it is in
+[KAMA_GAPS.md](../KAMA_GAPS.md) — three gaps with reproducers, none of them blocking.
 
 kama `0.9.204`…`0.9.208` shipped four things this package asked for while it was being written, and
 **rows 1–5 below consumed all four**:
@@ -18,9 +22,15 @@ kama `0.9.204`…`0.9.208` shipped four things this package asked for while it w
 |---|---|---|
 | 0.9.204 | **`UnsafeConstPtr<T>`** — the read-only raw pointer, C's `const T*` | the type libsodium's `const unsigned char*` inputs always wanted |
 | 0.9.205 | **`dataPtr()` is `const fn` returning `UnsafeConstPtr<T>`; `dataPtrMut()` is the writable half** | a `const ref Key` can hand its bytes to C |
-| 0.9.206 | the **`"kama"` manifest key** — the compiler range a package needs | this package declares `>=0.9.208` |
+| 0.9.206 | the **`"kama"` manifest key** — the compiler range a package needs | this package declares `>=0.9.214` |
 | 0.9.207 | **file-private names are keyed per file** | the four `knownAnswer` helpers in `tests/src/` |
 | 0.9.208 | the `-Wl,-dead_strip` warning per translation unit is gone from `--release` | confirmed: a consumer's release build is quiet |
+
+## DONE — the 0.3.0 arc
+
+6. **`ConstView<uint8>` at every parameter that only reads**, `viewMut()` at every writer.
+7. **Every internal accessor made private and `friend`-granted** to the operations that need it, by
+   name — 31 grants, two of which cross a module boundary.
 
 ## DONE — the 0.2.0 arc
 
@@ -47,11 +57,10 @@ kama `0.9.204`…`0.9.208` shipped four things this package asked for while it w
 
 | this package's shape | what it is waiting for | where |
 |---|---|---|
-| every `View<uint8>` parameter is a MUTABLE view taken by value (`seal(View<uint8> message, …)`), only so `addr(of: message[0])` is legal; a `const ref DynamicArray<uint8>` caller cannot even produce one | **`ConstView<T>` + `view()`/`viewMut()`** — the read-only view; those parameters become `ConstView<uint8>` | `../cstar/docs/ROADMAP.md` NOW row 2, *A read-only `View`* (sized L) |
-| `zeroed()` constructors and every `rawMut()` are `public` because a non-public member is private to its TYPE, and the code that fills a zeroed key lives outside it | **member visibility per file** — an open design question | `../cstar/docs/ROADMAP_DETAIL.md` §3 *Member visibility: per type, or per file?* |
-| `kama pkg add … --path ../kama-sodium` is how a consumer gets it; `kama publish --registry file:///…` is as far as publishing goes | the **hosted registry** for the `@kama` scope | `../cstar/docs/ROADMAP.md` LATER row 21, *Registry — hosted deployment* |
+| `Nonce.raw()` is the one `public` accessor left; it wants to be six `friend` grants and cannot be | a grant to a module absent from the program is a hard error | [KAMA_GAPS.md](../KAMA_GAPS.md) #2 |
+| `kama pkg add … --path ../kama-sodium` is how a consumer gets it; `kama publish --registry file:///…` is as far as publishing goes | the **hosted registry** for the `@kama` scope | `../cstar/docs/ROADMAP.md` LATER, *Registry — hosted deployment* |
 
-### Closed by this arc, and why they are NOT compiler rows
+### Closed, and why they are NOT compiler rows
 
 - ~~`pair.publicKey()` must be copied to a local before it is passed by `ref`.~~ **Not a gap.** Probed on
   0.9.208: a *non-const* `ref` parameter refuses a temporary — *"its mutation would be lost; bind it to a
@@ -60,6 +69,14 @@ kama `0.9.204`…`0.9.208` shipped four things this package asked for while it w
   to raise in `../cstar`.
 - ~~Keys must go by `ref` because there is no const raw pointer.~~ Shipped in 0.9.204/0.9.205.
 - ~~Two files of one module cannot both declare a private helper.~~ Shipped in 0.9.207.
+- ~~Every `View<uint8>` parameter must be mutable.~~ Shipped in 0.9.213/0.9.214.
+- ~~`zeroed()` and `rawMut()` must be `public`, because member visibility is per type and the code that
+  fills a zeroed key lives outside it.~~ **Wrong premise, and the correction came from the language's
+  author.** Visibility being type-scoped is deliberate, and `friend` is the mechanism — more granular
+  than C++'s, since it names individual members. Every one of those `public` markers is now a grant.
+  The lesson for this repo: a workaround that gets written into the docs as "an open design question"
+  stops anyone from looking for the feature that already exists. Check `SPEC.md` before recording a
+  limitation.
 
 ### An asymmetry worth knowing, not a row
 
@@ -73,7 +90,7 @@ emitting prototypes it deliberately does not emit.
 ## Before this can really be published
 
 Publishing works today only against a `file://` registry — `kama publish kama.json --registry
-file:///tmp/kreg`, then a consumer with `"@kama/sodium": { "version": "^0.2.0", "registry": … }`. That
+file:///tmp/kreg`, then a consumer with `"@kama/sodium": { "version": "^0.3.0", "registry": … }`. That
 round trip is proven for `0.2.0`: resolve, unpack, compile the vendored libsodium, link, run. Everything
 missing is host-side, in `../cstar`:
 

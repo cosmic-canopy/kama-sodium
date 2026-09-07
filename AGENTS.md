@@ -157,7 +157,8 @@ If a doc and the compiler disagree, the compiler is right and the doc is a bug w
 ## This package — @kama/sodium
 
 **Read [docs/ROADMAP.md](docs/ROADMAP.md) first.** It is the order of work and what this repo is still
-waiting on from the compiler. This package needs **kama ≥ 0.9.208**, declared as `"kama"` in the manifest.
+waiting on from the compiler, and [KAMA_GAPS.md](KAMA_GAPS.md) for the compiler gaps it has hit.
+This package needs **kama ≥ 0.9.214**, declared as `"kama"` in the manifest.
 
 What is true here and nowhere else, learned building it (the first external kama package):
 
@@ -185,8 +186,19 @@ What is true here and nowhere else, learned building it (the first external kama
   `uint8_t *` into a `const uint8_t *` parameter is legal C — so a green build proves nothing here.
   Read `csrc/kama_sodium.h` or `third_party/libsodium/.../sodium/*.h` for every one. The extern-agreement
   rule does catch a symbol declared two ways across files (`crypto_scalarmult_base` is in two).
-- **`zeroed()` constructors are public** because member visibility is per type, not per file/module,
-  and the free functions that fill them live outside the type.
+- **Visibility is type-scoped, and `friend` is how you widen it — not `public`.** A grant is
+  `friend <accessor>[members];` where the accessor is a type, a free function, or a `Type::method`
+  (a constructor included), and it names individual members. So a helper that fills another type's
+  private bytes gets a grant; it does not make the member public. Two things to know before writing
+  one: a **type** accessor must be `import`ed and named BARE (a qualified path resolves for a free
+  function only), and a grant naming a symbol in a module that is not in the program being built is a
+  hard ERROR — which is why `Nonce.raw()` is the one `public` accessor left. Both are KAMA_GAPS.md #1
+  and #2.
+- **A read-only window is `ConstView<uint8>`, a writable one is `View<uint8>`.** `view()` and
+  `slice()` mint the read-only pair, `viewMut()`/`sliceMut()` the writable one, and a `View` narrows to
+  a `ConstView` implicitly at every sink. `addr(of: cv[0])` gives an `UnsafeConstPtr<uint8>`, so a
+  caller's window types straight through to libsodium's `const` input. Declare a parameter by what the
+  callee DOES, and the compiler names `viewMut()` at any site that actually writes.
 - **A non-exported name is private to its FILE**, not to its module (kama ≥ 0.9.207), so the four
   `*_test.kama` files each keep their own private `knownAnswer`.
 - **Unwrapping a `Result`:** a value payload is copied out of a borrowing `match (r)`; a resource

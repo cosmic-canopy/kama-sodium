@@ -1,9 +1,9 @@
 {
   "name": "@kama/sodium",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "kind": "library",
-  "kama": ">=0.9.208",
+  "kama": ">=0.9.214",
   "modules": {
     ".":         { "visibility": "public" },
     "secretbox": { "visibility": "public" },

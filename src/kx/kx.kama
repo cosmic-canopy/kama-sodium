@@ -1,4 +1,7 @@
-import { sodium::SodiumError, sodium::ready, std::collections::View, std::collections::ConstView };
+// The two `Key` types are imported ONLY to be named in the `friend` grants below -- a grant resolves
+// a qualified path for a free function, but a type has to be in scope and named bare.
+import { sodium::SodiumError, sodium::ready, std::collections::View, std::collections::ConstView,
+         sodium::aead::Key as AeadKey, sodium::secretbox::Key as SecretboxKey };
 export { PublicKey, SecretKey, KeyPair, SessionKey, SessionKeys, Direction,
          PUBLICKEYBYTES, SECRETKEYBYTES, SESSIONKEYBYTES, SEEDBYTES,
          clientSessionKeys, serverSessionKeys };
@@ -33,10 +36,9 @@ extern fn UnsafePtr<uint8> kama_sodium_copy(UnsafePtr<uint8> dst, UnsafeConstPtr
 type value PublicKey {
     InlineArray<uint8>#(32) bytes;
 
-    // All-zero bytes, to be filled. Public because kama's member visibility is per TYPE (there is no
-    // module-internal tier), and the functions that fill it live outside the type; every path that
-    // mints one fills it before it leaves.
-    public ctor zeroed() { this.bytes = [0; 32]; }
+    // All-zero bytes, filled by whichever constructor mints one. Private, with `KeyPair` granted
+    // below: nothing outside this module should be able to make a zero key.
+    ctor zeroed() { this.bytes = [0; 32]; }
 
     public unsafe ctor Result<PublicKey, SodiumError> fromBytes(ConstView<uint8> bytes) {
         if (bytes.length() != PUBLICKEYBYTES) {
@@ -55,20 +57,25 @@ type value PublicKey {
     }
 
     // The bytes, for libsodium: read-only and `const`, so a `const ref PublicKey` can reach C.
-    // `rawMut()` is the writable half, and it exists because `KeyPair`'s constructors have to hand
-    // libsodium a buffer to FILL — and a field is private to its own type, so `KeyPair` cannot reach
-    // `this.pk.bytes` itself. Non-const on purpose: a `const ref` holder can never call it.
-    public unsafe const fn UnsafeConstPtr<uint8> raw()    { return this.bytes.dataPtr(); }
-    public unsafe fn       UnsafePtr<uint8>      rawMut() { return this.bytes.dataPtrMut(); }
+    // `rawMut()` is the writable half — `KeyPair`'s constructors have to hand libsodium a buffer to
+    // FILL, and a field is private to its own type, so `KeyPair` cannot reach `this.pk.bytes` itself.
+    // Non-const on purpose: a `const ref` holder can never call it.
+    //
+    // Neither is public. `KeyPair` gets both; the operations that pass a public key to libsodium get
+    // the read-only half and nothing else.
+    friend KeyPair[zeroed, raw, rawMut];
+    friend sodium::kx::clientSessionKeys[raw];
+    friend sodium::kx::serverSessionKeys[raw];
+    unsafe const fn UnsafeConstPtr<uint8> raw()    { return this.bytes.dataPtr(); }
+    unsafe fn       UnsafePtr<uint8>      rawMut() { return this.bytes.dataPtrMut(); }
 }
 
 type resource SecretKey {
     InlineArray<uint8>#(32) bytes;
 
-    // All-zero bytes, to be filled. Public because kama's member visibility is per TYPE (there is no
-    // module-internal tier), and the functions that fill it live outside the type; every path that
-    // mints one fills it before it leaves.
-    public ctor zeroed() { this.bytes = [0; 32]; }
+    // All-zero bytes, filled by whichever constructor mints one. Private, with `KeyPair` granted
+    // below: nothing outside this module should be able to make a zero key.
+    ctor zeroed() { this.bytes = [0; 32]; }
 
     public unsafe ctor Result<SecretKey, SodiumError> fromBytes(ConstView<uint8> bytes) {
         if (bytes.length() != SECRETKEYBYTES) {
@@ -86,8 +93,12 @@ type resource SecretKey {
         while (i < SECRETKEYBYTES) { into[i] = this.bytes[cast<usize>(i)]; i = i + 1; }
     }
 
-    public unsafe const fn UnsafeConstPtr<uint8> raw()    { return this.bytes.dataPtr(); }
-    public unsafe fn       UnsafePtr<uint8>      rawMut() { return this.bytes.dataPtrMut(); }
+    // Only `KeyPair` may reach a secret key's bytes: it owns one, fills it, and derives the public
+    // half from it. No free function is granted — the secret half reaches libsodium through
+    // `KeyPair.rawSecretKey()`, never directly.
+    friend KeyPair[zeroed, raw, rawMut];
+    unsafe const fn UnsafeConstPtr<uint8> raw()    { return this.bytes.dataPtr(); }
+    unsafe fn       UnsafePtr<uint8>      rawMut() { return this.bytes.dataPtrMut(); }
 
     unsafe ~SecretKey() { sodium_memzero(pnt: this.bytes.dataPtrMut(), len: cast<usize>(SECRETKEYBYTES)); }
 }
@@ -109,10 +120,13 @@ type resource KeyPair {
     public const fn PublicKey publicKey() { return this.pk; }
 
     // For the module's own operations (a free function cannot read a private field, even in this file).
-    // Read-only: every call site here passes them to libsodium as inputs, so neither needs a mutable
-    // form. The pair's two halves are FILLED inside the constructors below, through `rawMut()`.
-    public unsafe const fn UnsafeConstPtr<uint8> rawPublicKey() { return this.pk.raw(); }
-    public unsafe const fn UnsafeConstPtr<uint8> rawSecretKey() { return this.sk.raw(); }
+    // Read-only: every call site passes them to libsodium as inputs. The pair's two halves are FILLED
+    // in the constructors below, through the granted `rawMut()`. Granted, not public: a consumer has
+    // `publicKey()` and `exportSecretKeyTo()` and no reason for a pointer.
+    friend sodium::kx::clientSessionKeys[rawPublicKey, rawSecretKey];
+    friend sodium::kx::serverSessionKeys[rawPublicKey, rawSecretKey];
+    unsafe const fn UnsafeConstPtr<uint8> rawPublicKey() { return this.pk.raw(); }
+    unsafe const fn UnsafeConstPtr<uint8> rawSecretKey() { return this.sk.raw(); }
 
     public unsafe const fn void exportSecretKeyTo(View<uint8> into) { this.sk.exportTo(into: into); }
 
@@ -148,19 +162,20 @@ type resource KeyPair {
 type resource SessionKey {
     InlineArray<uint8>#(32) bytes;
 
-    // All-zero bytes, to be filled. Public because kama's member visibility is per TYPE (there is no
-    // module-internal tier), and the functions that fill it live outside the type; every path that
-    // mints one fills it before it leaves.
-    public ctor zeroed() { this.bytes = [0; 32]; }
+    // Everything below belongs to `SessionKeys`, which owns the two of these, and to nobody else —
+    // a session key is the one secret in this package that never has a public accessor of any kind.
+    friend SessionKeys[zeroed, rawMut, copyRawInto];
+
+    ctor zeroed() { this.bytes = [0; 32]; }
 
     // Write-only. Nothing READS a session key through a pointer — it leaves only by being copied
     // into a channel key (`copyRawInto` below) — so there is no `raw()`, and `rawMut()` exists solely
     // for `SessionKeys` to hand libsodium a buffer to fill.
-    public unsafe fn UnsafePtr<uint8> rawMut() { return this.bytes.dataPtrMut(); }
+    unsafe fn UnsafePtr<uint8> rawMut() { return this.bytes.dataPtrMut(); }
 
     // For `aead::Key.fromSession` and `secretbox::Key.fromSession`: 32 bytes into the key's own
     // storage, and nowhere else. `const` so a `const ref SessionKeys` can still hand its bytes over.
-    public unsafe const fn void copyRawInto(UnsafePtr<uint8> dst) {
+    unsafe const fn void copyRawInto(UnsafePtr<uint8> dst) {
         UnsafePtr<uint8> r = kama_sodium_copy(dst: dst, src: this.bytes.dataPtr(), n: cast<usize>(SESSIONKEYBYTES));
     }
 
@@ -176,16 +191,23 @@ type resource SessionKeys {
     SessionKey rxKey;
     SessionKey txKey;
 
-    // All-zero bytes, to be filled (see PublicKey.zeroed).
-    public ctor zeroed() { this.rxKey = SessionKey.zeroed(); this.txKey = SessionKey.zeroed(); }
+    // The exchange fills a zeroed pair; nothing else may make or write one.
+    friend sodium::kx::clientSessionKeys[zeroed, rawRxMut, rawTxMut];
+    friend sodium::kx::serverSessionKeys[zeroed, rawRxMut, rawTxMut];
 
-    // Write-only, for the two `*SessionKeys` functions below to fill. See `SessionKey.rawMut`.
-    public unsafe fn UnsafePtr<uint8> rawRxMut() { return this.rxKey.rawMut(); }
-    public unsafe fn UnsafePtr<uint8> rawTxMut() { return this.txKey.rawMut(); }
+    // `copyInto` is the one door out of a session key, and these two constructors are the only things
+    // allowed through it — named one method at a time, across a module boundary. That is the whole
+    // hand-off from a key exchange to a channel: the bytes go from this pair straight into an
+    // `aead::Key` or a `secretbox::Key` and never sit anywhere a caller can see.
+    friend AeadKey::fromSession[copyInto];
+    friend SecretboxKey::fromSession[copyInto];
 
-    // One direction's 32 bytes into a channel key's own storage — how `aead::Key.fromSession` and
-    // `secretbox::Key.fromSession` take a session key with no plaintext copy in between.
-    public unsafe const fn void copyInto(Direction direction, UnsafePtr<uint8> dst) {
+    ctor zeroed() { this.rxKey = SessionKey.zeroed(); this.txKey = SessionKey.zeroed(); }
+
+    unsafe fn UnsafePtr<uint8> rawRxMut() { return this.rxKey.rawMut(); }
+    unsafe fn UnsafePtr<uint8> rawTxMut() { return this.txKey.rawMut(); }
+
+    unsafe const fn void copyInto(Direction direction, UnsafePtr<uint8> dst) {
         match (direction) {
             case Rx: { this.rxKey.copyRawInto(dst: dst); }
             case Tx: { this.txKey.copyRawInto(dst: dst); }
