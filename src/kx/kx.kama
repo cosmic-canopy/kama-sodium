@@ -191,7 +191,7 @@ type resource SessionKeys {
 
 // The client's keys, from its own pair and the server's public key. `Err(InvalidPublicKey)` if the
 // server's key is not a valid point.
-unsafe fn Result<SessionKeys, SodiumError> clientSessionKeys(ref KeyPair client, ref PublicKey server) {
+unsafe fn Result<SessionKeys, SodiumError> clientSessionKeys(const ref KeyPair client, const ref PublicKey server) {
     ready();
     SessionKeys s = SessionKeys.zeroed();
     int32 rc = crypto_kx_client_session_keys(rx: s.rawRxMut(), tx: s.rawTxMut(),
@@ -202,7 +202,7 @@ unsafe fn Result<SessionKeys, SodiumError> clientSessionKeys(ref KeyPair client,
 }
 
 // The server's keys, from its own pair and the client's public key.
-unsafe fn Result<SessionKeys, SodiumError> serverSessionKeys(ref KeyPair server, ref PublicKey client) {
+unsafe fn Result<SessionKeys, SodiumError> serverSessionKeys(const ref KeyPair server, const ref PublicKey client) {
     ready();
     SessionKeys s = SessionKeys.zeroed();
     int32 rc = crypto_kx_server_session_keys(rx: s.rawRxMut(), tx: s.rawTxMut(),

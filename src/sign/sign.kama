@@ -162,7 +162,7 @@ type value Signature {
 }
 
 // Sign `message` with the pair's secret key. Deterministic: the same key and message give the same signature.
-unsafe fn Signature sign(View<uint8> message, ref KeyPair key) {
+unsafe fn Signature sign(View<uint8> message, const ref KeyPair key) {
     ready();
     Signature s = Signature.zeroed();
     // An empty message is signable. libsodium takes a pointer it will not read for mlen 0, and a View
@@ -177,7 +177,7 @@ unsafe fn Signature sign(View<uint8> message, ref KeyPair key) {
 
 // Does `signature` sign `message` under the pair whose public half is `key`? `false` for a forged or
 // altered signature, an altered message, or another signer.
-unsafe fn bool verify(ref Signature signature, View<uint8> message, ref PublicKey key) {
+unsafe fn bool verify(const ref Signature signature, View<uint8> message, const ref PublicKey key) {
     ready();
     UnsafeConstPtr<uint8> m = signature.raw();
     if (message.length() != 0) { m = addr(of: message[0]); }

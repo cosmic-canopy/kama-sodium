@@ -53,7 +53,7 @@ type resource Key {
 
     // A `kx` session key IS an XChaCha20-Poly1305 key (both 32 bytes, both uniformly random); this is
     // the hand-off from a key exchange to a channel, with no plaintext copy in between.
-    public unsafe ctor fromSession(ref SessionKeys keys, Direction direction) {
+    public unsafe ctor fromSession(const ref SessionKeys keys, Direction direction) {
         this.bytes = [0; 32];
         keys.copyInto(direction: direction, dst: this.bytes.dataPtrMut());
     }
@@ -74,7 +74,8 @@ type resource Key {
 
 // Encrypt `message`, authenticating it together with `ad`, into `into` (exactly message.length() +
 // MACBYTES). `ad` may be empty. Answers the bytes written; allocates nothing.
-unsafe fn isize sealInto(View<uint8> into, View<uint8> message, View<uint8> ad, ref Nonce nonce, ref Key key) {
+unsafe fn isize sealInto(View<uint8> into, View<uint8> message, View<uint8> ad,
+                         const ref Nonce nonce, const ref Key key) {
     ready();
     if (into.length() != message.length() + MACBYTES) {
         panic(msg: "aead::sealInto: `into` must be message.length() + MACBYTES");
@@ -91,7 +92,7 @@ unsafe fn isize sealInto(View<uint8> into, View<uint8> message, View<uint8> ad, 
 // `Err(Forged)` if the ciphertext OR the associated data differ from what was sealed, or the key or
 // nonce do; `into` is then not to be trusted.
 unsafe fn Result<isize, SodiumError> openInto(View<uint8> into, View<uint8> ciphertext, View<uint8> ad,
-                                              ref Nonce nonce, ref Key key) {
+                                              const ref Nonce nonce, const ref Key key) {
     ready();
     if (ciphertext.length() < MACBYTES) {
         return Result::Err(error: SodiumError::BadLength(expected: MACBYTES, got: ciphertext.length()));
@@ -108,13 +109,14 @@ unsafe fn Result<isize, SodiumError> openInto(View<uint8> into, View<uint8> ciph
     return Result::Ok(value: plain);
 }
 
-unsafe fn FixedArray<uint8> seal(View<uint8> message, View<uint8> ad, ref Nonce nonce, ref Key key) {
+unsafe fn FixedArray<uint8> seal(View<uint8> message, View<uint8> ad, const ref Nonce nonce, const ref Key key) {
     FixedArray<uint8> buf = FixedArray::<uint8>.make(size: message.length() + MACBYTES);
     isize n = sealInto(into: buf.view(), message: message, ad: ad, nonce: nonce, key: key);
     return buf;
 }
 
-unsafe fn Result<FixedArray<uint8>, SodiumError> open(View<uint8> ciphertext, View<uint8> ad, ref Nonce nonce, ref Key key) {
+unsafe fn Result<FixedArray<uint8>, SodiumError> open(View<uint8> ciphertext, View<uint8> ad,
+                                                      const ref Nonce nonce, const ref Key key) {
     if (ciphertext.length() < MACBYTES) {
         return Result::Err(error: SodiumError::BadLength(expected: MACBYTES, got: ciphertext.length()));
     }

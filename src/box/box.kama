@@ -141,7 +141,8 @@ type resource KeyPair {
 
 // Seal `message` for `to`, from the holder of the pair `from`, into `into` (exactly message.length() +
 // MACBYTES). The sender is identified by its pair; the recipient by its public key, a value received.
-unsafe fn isize sealInto(View<uint8> into, View<uint8> message, ref Nonce nonce, ref PublicKey to, ref KeyPair from) {
+unsafe fn isize sealInto(View<uint8> into, View<uint8> message, const ref Nonce nonce,
+                         const ref PublicKey to, const ref KeyPair from) {
     ready();
     if (into.length() != message.length() + MACBYTES) {
         panic(msg: "box::sealInto: `into` must be message.length() + MACBYTES");
@@ -155,8 +156,8 @@ unsafe fn isize sealInto(View<uint8> into, View<uint8> message, ref Nonce nonce,
 
 // Open a box sealed by the holder of the public key `from` for the holder of the pair `to`, into `into`
 // (exactly ciphertext.length() - MACBYTES). `Err(Forged)` if it was not, or was altered since.
-unsafe fn Result<isize, SodiumError> openInto(View<uint8> into, View<uint8> ciphertext, ref Nonce nonce,
-                                              ref PublicKey from, ref KeyPair to) {
+unsafe fn Result<isize, SodiumError> openInto(View<uint8> into, View<uint8> ciphertext, const ref Nonce nonce,
+                                              const ref PublicKey from, const ref KeyPair to) {
     ready();
     if (ciphertext.length() < MACBYTES) {
         return Result::Err(error: SodiumError::BadLength(expected: MACBYTES, got: ciphertext.length()));
@@ -172,13 +173,15 @@ unsafe fn Result<isize, SodiumError> openInto(View<uint8> into, View<uint8> ciph
     return Result::Ok(value: plain);
 }
 
-unsafe fn FixedArray<uint8> seal(View<uint8> message, ref Nonce nonce, ref PublicKey to, ref KeyPair from) {
+unsafe fn FixedArray<uint8> seal(View<uint8> message, const ref Nonce nonce,
+                                 const ref PublicKey to, const ref KeyPair from) {
     FixedArray<uint8> buf = FixedArray::<uint8>.make(size: message.length() + MACBYTES);
     isize n = sealInto(into: buf.view(), message: message, nonce: nonce, to: to, from: from);
     return buf;
 }
 
-unsafe fn Result<FixedArray<uint8>, SodiumError> open(View<uint8> ciphertext, ref Nonce nonce, ref PublicKey from, ref KeyPair to) {
+unsafe fn Result<FixedArray<uint8>, SodiumError> open(View<uint8> ciphertext, const ref Nonce nonce,
+                                                      const ref PublicKey from, const ref KeyPair to) {
     if (ciphertext.length() < MACBYTES) {
         return Result::Err(error: SodiumError::BadLength(expected: MACBYTES, got: ciphertext.length()));
     }
@@ -190,7 +193,7 @@ unsafe fn Result<FixedArray<uint8>, SodiumError> open(View<uint8> ciphertext, re
 }
 
 // A sealed box: for `to`, from nobody in particular. SEALBYTES longer than the message; no nonce.
-unsafe fn FixedArray<uint8> sealAnonymous(View<uint8> message, ref PublicKey to) {
+unsafe fn FixedArray<uint8> sealAnonymous(View<uint8> message, const ref PublicKey to) {
     ready();
     FixedArray<uint8> buf = FixedArray::<uint8>.make(size: message.length() + SEALBYTES);
     UnsafePtr<uint8> m = message.length() == 0 ? addr(of: buf[0]) : addr(of: message[0]);
@@ -200,7 +203,7 @@ unsafe fn FixedArray<uint8> sealAnonymous(View<uint8> message, ref PublicKey to)
 }
 
 // Open a sealed box with the pair it was sealed to. `Err(Forged)` for any other pair or an altered box.
-unsafe fn Result<FixedArray<uint8>, SodiumError> openAnonymous(View<uint8> ciphertext, ref KeyPair to) {
+unsafe fn Result<FixedArray<uint8>, SodiumError> openAnonymous(View<uint8> ciphertext, const ref KeyPair to) {
     ready();
     if (ciphertext.length() < SEALBYTES) {
         return Result::Err(error: SodiumError::BadLength(expected: SEALBYTES, got: ciphertext.length()));
