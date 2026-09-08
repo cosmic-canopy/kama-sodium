@@ -8,12 +8,13 @@ compiler version it needs.
 
 ## Where this is (2026-09-07)
 
-`0.3.0`, built and tested on kama **0.9.214**, with a declared floor of `>=0.9.214`. Six modules,
+`0.4.0`, built and tested on kama **0.9.233**, with a declared floor of `>=0.9.227`. Six modules,
 libsodium 1.0.20 vendored, every primitive proven against libsodium's own vectors.
 
-**Nothing is blocked any more.** The `ConstView<T>` row shipped in 0.9.213/0.9.214 and was this
-package's last dependency on the compiler. What it hit while consuming it is in
-[KAMA_GAPS.md](../KAMA_GAPS.md) — three gaps with reproducers, none of them blocking.
+**Nothing is blocked.** Every gap this package filed has been fixed upstream — the `friend` pair in
+0.9.227 and the `addr(of:)` diagnostic in 0.9.229 — so there is no public pointer into key material
+left anywhere in the API. One new finding is open, and it is a documentation defect rather than a
+language one: see [KAMA_GAPS.md](../KAMA_GAPS.md) #4.
 
 kama `0.9.204`…`0.9.208` shipped four things this package asked for while it was being written, and
 **rows 1–5 below consumed all four**:
@@ -22,9 +23,16 @@ kama `0.9.204`…`0.9.208` shipped four things this package asked for while it w
 |---|---|---|
 | 0.9.204 | **`UnsafeConstPtr<T>`** — the read-only raw pointer, C's `const T*` | the type libsodium's `const unsigned char*` inputs always wanted |
 | 0.9.205 | **`dataPtr()` is `const fn` returning `UnsafeConstPtr<T>`; `dataPtrMut()` is the writable half** | a `const ref Key` can hand its bytes to C |
-| 0.9.206 | the **`"kama"` manifest key** — the compiler range a package needs | this package declares `>=0.9.214` |
+| 0.9.206 | the **`"kama"` manifest key** — the compiler range a package needs | this package declares `>=0.9.227` |
 | 0.9.207 | **file-private names are keyed per file** | the four `knownAnswer` helpers in `tests/src/` |
 | 0.9.208 | the `-Wl,-dead_strip` warning per translation unit is gone from `--release` | confirmed: a consumer's release build is quiet |
+
+## DONE — the 0.4.0 arc
+
+8. **`Nonce.raw()` made private**, the last public pointer into key material — unblocked by the
+   `friend` fix this repo asked for (0.9.227).
+9. **Adopted `AGENTS.package.md`** (0.9.231), whose content this package's own guidance seeded; the
+   repo's specifics moved to `AGENTS.sodium.md`.
 
 ## DONE — the 0.3.0 arc
 
@@ -57,8 +65,9 @@ kama `0.9.204`…`0.9.208` shipped four things this package asked for while it w
 
 | this package's shape | what it is waiting for | where |
 |---|---|---|
-| `Nonce.raw()` is the one `public` accessor left; it wants to be six `friend` grants and cannot be | a grant to a module absent from the program is a hard error | [KAMA_GAPS.md](../KAMA_GAPS.md) #2 |
 | `kama pkg add … --path ../kama-sodium` is how a consumer gets it; `kama publish --registry file:///…` is as far as publishing goes | the **hosted registry** for the `@kama` scope | `../cstar/docs/ROADMAP.md` LATER, *Registry — hosted deployment* |
+
+That is the only row. Nothing else in this package is waiting on the compiler.
 
 ### Closed, and why they are NOT compiler rows
 
@@ -90,8 +99,8 @@ emitting prototypes it deliberately does not emit.
 ## Before this can really be published
 
 Publishing works today only against a `file://` registry — `kama publish kama.json --registry
-file:///tmp/kreg`, then a consumer with `"@kama/sodium": { "version": "^0.3.0", "registry": … }`. That
-round trip is proven for `0.3.0`: resolve, unpack, compile the vendored libsodium, link, run. Everything
+file:///tmp/kreg`, then a consumer with `"@kama/sodium": { "version": "^0.4.0", "registry": … }`. That
+round trip is proven for `0.4.0`: resolve, unpack, compile the vendored libsodium, link, run. Everything
 missing is host-side, in `../cstar`:
 
 - **LATER row 21 — hosted registry deployment (M3.3).** Everything below gates on a live host; the

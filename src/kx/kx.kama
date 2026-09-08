@@ -1,7 +1,4 @@
-// The two `Key` types are imported ONLY to be named in the `friend` grants below -- a grant resolves
-// a qualified path for a free function, but a type has to be in scope and named bare.
-import { sodium::SodiumError, sodium::ready, std::collections::View, std::collections::ConstView,
-         sodium::aead::Key as AeadKey, sodium::secretbox::Key as SecretboxKey };
+import { sodium::SodiumError, sodium::ready, std::collections::View, std::collections::ConstView };
 export { PublicKey, SecretKey, KeyPair, SessionKey, SessionKeys, Direction,
          PUBLICKEYBYTES, SECRETKEYBYTES, SESSIONKEYBYTES, SEEDBYTES,
          clientSessionKeys, serverSessionKeys };
@@ -199,8 +196,8 @@ type resource SessionKeys {
     // allowed through it — named one method at a time, across a module boundary. That is the whole
     // hand-off from a key exchange to a channel: the bytes go from this pair straight into an
     // `aead::Key` or a `secretbox::Key` and never sit anywhere a caller can see.
-    friend AeadKey::fromSession[copyInto];
-    friend SecretboxKey::fromSession[copyInto];
+    friend sodium::aead::Key::fromSession[copyInto];
+    friend sodium::secretbox::Key::fromSession[copyInto];
 
     ctor zeroed() { this.rxKey = SessionKey.zeroed(); this.txKey = SessionKey.zeroed(); }
 

@@ -99,17 +99,20 @@ type value Nonce {
     // only reads a nonce, and `UnsafeConstPtr<uint8>` is how that is said. The one path that WRITES
     // these bytes is `increment()`, inside the type, through `dataPtrMut()`.
     //
-    // ⚠️ `public` under protest, and the ONE accessor in this package that is. It wants to be six
-    // `friend` grants -- `sodium::{aead,secretbox,box}::{sealInto,openInto}` -- and those compile.
-    // But a grant to a symbol in a sibling module is a hard error when that module is not part of the
-    // program being built, and `Nonce` lives in the ROOT module that every consumer imports. Granting
-    // from here would drag aead + secretbox + box into every build that touches a nonce, which is the
-    // whole package. See KAMA_GAPS.md #2; make this private the day that is fixed.
+    // Not public: a raw pointer into a nonce is this package's business, not its callers'. The six
+    // operations that hand one to libsodium are named here and nothing else can reach it.
     //
-    // Every OTHER private accessor in this package is `friend`-granted, including two that do cross a
-    // module boundary (`SessionKeys.copyInto`), because those grant leaf-ward and the forced import is
-    // one a `kx` consumer wants anyway.
-    public unsafe const fn UnsafeConstPtr<uint8> raw() { return this.bytes.dataPtr(); }
+    // `Nonce` lives in the ROOT module, which every consumer imports, while three of these modules may
+    // not be in a given program at all -- a program that uses only `aead` never compiles `box`. Since
+    // kama 0.9.227 a grant into an absent module is INERT rather than an error, which is what lets the
+    // root module grant leaf-ward like this without dragging the whole package into every build.
+    friend sodium::aead::sealInto[raw];
+    friend sodium::aead::openInto[raw];
+    friend sodium::secretbox::sealInto[raw];
+    friend sodium::secretbox::openInto[raw];
+    friend sodium::box::sealInto[raw];
+    friend sodium::box::openInto[raw];
+    unsafe const fn UnsafeConstPtr<uint8> raw() { return this.bytes.dataPtr(); }
 }
 
 // libsodium initialized, or a panic: `sodium_init` fails only on a platform with no entropy source,

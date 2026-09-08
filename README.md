@@ -8,7 +8,7 @@ is libsodium's, and what this package adds is the types that make misuse a compi
 kama pkg add kama.json @kama/sodium --path ../kama-sodium     # today: a path dependency
 ```
 
-Needs **kama ≥ 0.9.214** — declared as `"kama": ">=0.9.214"` in the manifest, so `kama pkg install` and
+Needs **kama ≥ 0.9.227** — declared as `"kama": ">=0.9.227"` in the manifest, so `kama pkg install` and
 `kama build` both refuse an older compiler by name rather than failing somewhere inside the source.
 
 ```kama
@@ -65,8 +65,7 @@ associated data — `examples/udp_channel/` is that shape end to end.
 - **The raw accessors are not public API.** `raw()`, `rawMut()`, `zeroed()` and the session-key copy are
   private, `friend`-granted to exactly the operations that need them — by name, one member at a time.
   A consumer gets constructors, `exportTo`, `publicKey()` and the operations, and cannot obtain a
-  pointer into a key at all. (`Nonce.raw()` is the one exception, for a reason recorded in
-  [KAMA_GAPS.md](KAMA_GAPS.md).)
+  pointer into a key at all — there is no exception.
 - **A key pair is taken whole.** A field of a `resource` is always private, so `box`/`sign`/`kx` take
   `const ref KeyPair`; the public half comes out as a value (`PublicKey pk = pair.publicKey();`), which
   is what goes on the wire.
