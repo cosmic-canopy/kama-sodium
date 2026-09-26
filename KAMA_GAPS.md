@@ -4,7 +4,8 @@ Found while making the first external kama package production-ready. Each one is
 smallest program that shows it, and each was **run** on the version named — none is inferred from
 reading the spec.
 
-**Current compiler:** `kama 0.9.233+gd039460` (a dev build at `../cstar/out/Darwin-arm64/kama`).
+**Current compiler:** `kama 0.9.451+g4bcfc264` (a dev build at `../cstar/out/Darwin-arm64/kama`), and
+the public release `0.9.440`. `tools/test.sh` is green on both; `tools/test-wasm.sh` on `0.9.451`.
 **Reporter:** the `@kama/sodium` repo — every item is something this package hit naturally while
 trying to write the code the obvious way, not something contrived to break the compiler.
 
@@ -12,7 +13,19 @@ trying to write the code the obvious way, not something contrived to break the c
 
 ## OPEN
 
-### 4. The embedded agent guidance contradicts the compiler — HIGH
+Nothing. Every gap this package has filed is fixed upstream.
+
+---
+
+## FIXED — kept for the record
+
+### 4. The embedded agent guidance contradicted the compiler — FIXED in 0.9.237
+
+Fixed by `7f232b57`, which rewrote all three bullets and took the root-cause suggestion too: the
+"the compiler rejects this" sentences in `agents/AGENTS.md` now each name the fixture that proves
+them, under the same claim guard `SPEC.md` has, so a new one without a fixture fails the gate.
+Confirmed here on `0.9.451`: `kama agents install --force` writes none of the three, and the warning
+that `AGENTS.sodium.md` carried against them is gone. The original report follows.
 
 `kama agents install` writes `AGENTS.md` from the copy embedded in the binary (`agents/` in the cstar
 tree). On `0.9.233` that file still carries **three claims that the compiler stopped honouring up to
@@ -69,10 +82,6 @@ owners by mutable `ref` — which is what this package did, and why its API was 
 ref` half to the third. More generally these bullets have no test holding them to the compiler, unlike
 `SPEC.md`, whose claims carry `<!-- test: -->` / `<!-- xfail: -->` markers — that asymmetry is probably
 the root cause.
-
----
-
-## FIXED — kept for the record
 
 ### 1. `friend` did not resolve a qualified path for a type — FIXED in 0.9.227
 

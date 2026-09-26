@@ -1,9 +1,9 @@
 # CI for a kama package. This is the shape the next @kama package should copy.
 #
-# ⚠️ THIS WORKFLOW HAS NEVER RUN. There is no git remote on this repository yet, and kama is not public,
-# so the install step below cannot resolve. Both are prerequisites, not bugs in this file — see
-# docs/ROADMAP.md § "Before this can really be published". When they exist, push and it should go green
-# with no edits.
+# ⚠️ NOT YET SEEN GREEN. Until kama 0.9.440 (2026-09-23) there was no public release for the install
+# step to resolve, and this file pinned v0.9.208, which was never released. Both prerequisites exist now
+# — this repository's remote, and a public kama — and tools/test.sh passes locally on the pinned
+# release. See docs/ROADMAP.md § LATER.
 #
 # What it does and does not do:
 #   - It installs a kama toolchain and runs tools/test.sh, which is the whole gate: the tests build in
@@ -11,7 +11,8 @@
 #     built and run as an end-to-end case.
 #   - It does NOT install libsodium. That is the point of vendoring it under third_party/ and compiling
 #     it through `csources` — a consumer of this package needs nothing on the machine either.
-#   - The matrix is the two hosts a kama release exists for. Add windows-latest when it does.
+#   - The matrix is linux-x64 and macOS. A windows-x64 release exists as of 0.9.440, but this package
+#     has never been built on Windows; add windows-latest once it has.
 
 name: ci
 
@@ -38,12 +39,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # The manifest declares `"kama": ">=0.9.208"`. Pinning KAMA_VERSION here rather than taking
-      # `latest` keeps a compiler release from turning this repository red without a commit; raise it
-      # deliberately, the same way the manifest floor is raised.
+      # tests/ and the example declare `"kama": ">=0.9.440"` (the library itself, `>=0.9.227`). Pinning
+      # KAMA_VERSION here rather than taking `latest` keeps a compiler release from turning this
+      # repository red without a commit; raise it deliberately, the same way a manifest floor is raised.
       - name: Install kama
         env:
-          KAMA_VERSION: v0.9.208
+          KAMA_VERSION: v0.9.440
         run: |
           curl -fsSL https://kama-lang.org/install.sh | sh
           echo "$HOME/.kama/bin" >> "$GITHUB_PATH"

@@ -103,6 +103,7 @@ builds and runs `examples/udp_channel`. Round trips; a flipped byte, the wrong k
 altered associated data are `Forged`; short inputs are `BadLength`; the `into` forms match the allocating
 ones; empty messages; seeded pairs are deterministic; and a known-answer vector per primitive from
 libsodium's own `test/default/` (RFC 8032 for Ed25519), extracted from the vendored tarball by script.
+Both programs need kama ≥ 0.9.440, above the library's own floor, because they import `core::println`.
 
 `tools/test-wasm.sh` runs the same two programs built for wasm under node, in a container with emcc.
 That is the leg vendoring buys: there is no system libsodium for wasm, so a package linking `-lsodium`

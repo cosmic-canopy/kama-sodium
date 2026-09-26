@@ -3,6 +3,24 @@
 All notable changes to `@kama/sodium`. The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Onto kama's first public release. **The library is unchanged** — no file under `src/` or `csrc/` moved,
+so its floor stays kama ≥ 0.9.227 and there is nothing to release yet. Verified on kama 0.9.440 (the
+public release) and 0.9.451, native debug and release, plus the wasm leg on 0.9.451.
+
+### Changed
+
+- `tests/` and `examples/udp_channel` import `println` from `core`, which kama 0.9.427 made mandatory,
+  and their manifests declare `"kama": ">=0.9.440"`.
+- CI installs the public `v0.9.440`; it pinned `v0.9.208`, which was never released.
+- `AGENTS.md` and `AGENTS.package.md` regenerated on kama 0.9.451.
+
+### Removed
+
+- The warning in `AGENTS.sodium.md` against three stale bullets in the generated `AGENTS.md` — kama
+  0.9.237 fixed them (`KAMA_GAPS.md` #4, now under FIXED; nothing this package filed is open).
+
 ## [0.4.0] — 2026-09-07
 
 Housekeeping on a much newer compiler. **No API change** — the only reason this is a minor bump rather

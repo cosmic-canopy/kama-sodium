@@ -13,7 +13,7 @@
 //
 // No sockets here — the packets are byte arrays handed across — so the whole thing runs as a test.
 // Exit 0 when every packet round-trips, a replay is refused, and a tampered header is refused.
-import { sodium::SodiumError, sodium::Nonce, sodium::equalsConstantTime,
+import { core::println, sodium::SodiumError, sodium::Nonce, sodium::equalsConstantTime,
          sodium::kx::KeyPair, sodium::kx::PublicKey, sodium::kx::SessionKeys, sodium::kx::Direction,
          sodium::kx::clientSessionKeys, sodium::kx::serverSessionKeys,
          sodium::aead::Key, sodium::aead::MACBYTES, sodium::aead::sealInto, sodium::aead::openInto,

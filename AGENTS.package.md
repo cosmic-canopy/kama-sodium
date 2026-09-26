@@ -33,8 +33,8 @@ system libraries at all, and a shipped binary links one known version. One scrip
   block of `kama.json` between two marker comments**. Nothing under `third_party/` and nothing in that
   block is hand-edited; upgrading is a change to the two constants, a run, a read of the diff, and a
   version bump of the package.
-- `csources` compiles `.c` only (`-std=gnu11`, the C the world writes); assembly files are never
-  selected, so the library's C paths are what run. `cincludes` puts the vendored include tree on every
+- `csources` compiles C (`-std=gnu11`, the C the world writes), C++ (`gnu++17`, with `cxxflags`) and
+  Objective-C by extension; assembly files are never selected, so the library's C paths are what run. `cincludes` puts the vendored include tree on every
   consumer's path.
 - The library's configuration is a `-D` list in the manifest's `cflags`. ⚠️ A dependency's `cflags`
   reach **every translation unit of the consumer's build** — that is kama's design — so the list holds
@@ -62,13 +62,14 @@ is inert — so a root type may name every sibling that touches it.
 
 ## Publishing
 
-`kama publish kama.json --registry <url>` uploads an immutable version (a re-publish of the same version
-is refused); the tarball excludes `.git/`, `.kama/`, `out/` and `kama.lock`. Before the first publish:
+`kama publish kama.json --registry <dir-or-file-uri>` writes an immutable version into a registry — a
+directory (or `file://` URI) you then serve or push, not an upload endpoint — and a re-publish of the same
+version is refused; the tarball excludes `.git/`, `.kama/`, `out/` and `kama.lock`. Before the first publish:
 `--license mit` at seed time (or `"license"` in the manifest and a `LICENSE` file), a README that says
 what is vendored and why, and the `tests/` gate green on every target the package claims.
 
 ## This project
 
-`AGENTS.sodium.md` — what is true in @kama/sodium and nowhere else, plus a standing correction for
-three stale bullets in the generated `AGENTS.md`. (Pointer added by hand; `kama agents install --force`
-drops it. `CLAUDE.md` loads all three files directly, so the chain survives a re-install either way.)
+`AGENTS.sodium.md` — what is true in @kama/sodium and nowhere else. (Pointer added by hand; `kama agents
+install --force` drops it. `CLAUDE.md` loads all three files directly, so the chain survives a re-install
+either way.)

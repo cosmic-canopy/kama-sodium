@@ -1,7 +1,8 @@
 // The package's own tests: one program, one fn per module, exit 0 when every case holds. A failing
 // case prints its name, so the runner's log says WHICH, not just that.
-import { sodium::SodiumError, sodium::version, sodium_tests::secretboxTests, sodium_tests::aeadTests,
-         sodium_tests::boxTests, sodium_tests::signTests, sodium_tests::kxTests, sodium_tests::randomTests,
+import { core::println, sodium::SodiumError, sodium::version,
+         sodium_tests::secretboxTests, sodium_tests::aeadTests, sodium_tests::boxTests,
+         sodium_tests::signTests, sodium_tests::kxTests, sodium_tests::randomTests,
          std::collections::FixedArray, std::collections::DynamicArray,
          std::encoding::hex::DecodeError, std::encoding::hex::decode as hexDecode };
 export { check, unhex, isForged, isBadLength };

@@ -14,6 +14,7 @@ Prefer it to searching the tree — it is one process, one file, no editor and n
 ```sh
 kama query <kama.json> <file> --search Widget # find a symbol BY NAME, across the package
 kama query <file> --symbols                   # outline of one file
+kama stats <kama.json>                        # what the whole project IS, in numbers (--json too)
 kama query <file> --complete L:C              # candidates + FULL signatures with parameter names
 kama query <file> --type L:C                  # what is this, exactly
 kama query <file> --def L:C                   # where is it declared
@@ -43,13 +44,33 @@ Reach for `--search` first. It is the only mode that takes a name rather than a 
 it is usually the cheapest way in. **Never invent a function signature** — `--search` to find it,
 then `--complete` or `--type` to read its real parameter names.
 
-## Verify with `kama build`, not `kama check`
+## A name with `k_` or `kama_` in it came out of the C
+
+kama lowers to C, so every name it owns reaches C in a prefixed register and a generic carries its
+arguments mangled into the name. You only ever see one by reading the generated C, a C compiler's error,
+or a crash log — a diagnostic, a hover and a `kama query` answer all show the name as written. Do not
+try to unpick it by hand, and do not grep the source for it; ask:
 
 ```sh
-kama build <file>      # the real check: compiles, and reports type errors
-kama run               # build the manifest entry and run it
-kama check <file>      # FAST SUBSET — see below
+kama demangle <file> -- k_Fapp__Pair_int32__make   # -> Pair<int32>::make
 ```
+
+Names are rewritten in place, so paste the whole error line, not just the identifier. With no `--` it
+reads a line per line from stdin until EOF.
+
+## Verify with `kama check`, then `kama build`
+
+```sh
+kama check kama.json   # fast: names, ownership, and type errors by kind and width — no C compiler
+kama build kama.json   # compiles and links, so it also reports what only the C compiler sees
+kama run kama.json     # build the manifest entry and run it
+```
+
+Name the `kama.json`: a `.kama` operand is a loose build that reads no manifest, so project imports fail.
+`kama check` is the one command that also looks at code THIS build leaves out: it analyzes whatever
+further configurations your `@compileFor` gates need, so a wasm-only or release-only file cannot rot
+unnoticed, and tags anything it finds with the flags that reproduce it (`[--target WASM]`). Pass a
+configuration flag (`--target`, `--release`, `--define`…) to check exactly that one instead.
 
 `kama check` runs name resolution, named-argument matching, ownership/move analysis, and type checking
 **by kind** — a value is a number, a `bool`, a `string`, or a type value, and crossing between two of
@@ -118,7 +139,10 @@ feature.
   must have the type the collection actually yields, so `foreach (char c in s)` is rejected. Casing
   and whitespace are ASCII-only by design.
 - **`@generate` requires every field to be marked** `@field` or `@skip`. An unmarked field is an
-  error, so adding one can never silently start serializing it.
+  error, so adding one can never silently start serializing it. A `@field` carries a wire NAME and an ID
+  (`@field(name: "wire")`, `@field(id: 3)`) — the name defaults to the property name, the id to the
+  declaration index — and the backend keeps whichever it addresses by, so one marked type works with every
+  backend. `@deprecated` on a field means read when present, never written.
 - **Integer overflow traps** in debug rather than wrapping; `std::num`'s `wrapping*` are the opt-in.
 - **A module is a FOLDER, and a file says nothing about which one it is in.** There is no `namespace`
   declaration — a file's module is its directory under the source root, and `kama.json`'s `modules` map
@@ -139,19 +163,22 @@ feature.
 - **Every C keyword is reserved** — `out`, `short`, `long`, `signed`, `register`, … cannot name a
   binding, because kama lowers to C. The message names the word; pick another.
 - **A `ref`-returning method call cannot feed a `ref` parameter** — a call result is a temporary and
-  its mutation would be lost. Pass the owner by `ref` instead (`seal(from: pair)`, not
-  `seal(from: pair.secretKey())`), or copy a value out to a local first.
-- **A buffer reaches C through `ref`, never `const ref`.** There is no const raw pointer, and
-  `addr(of:)` on a const receiver is refused ("const is deep"). An FFI wrapper that only reads still
-  takes `ref`.
+  its mutation would be lost. A **`const ref` parameter takes one fine**, so a reader's signature is the
+  usual fix (`hash(of: const ref …)` fed by `pair.secretKey()`); only a MUTATING callee needs the owner
+  passed by `ref` instead, or a value copied out to a local first.
+- **A read-only buffer reaches C as `UnsafeConstPtr<T>`** — the read-only raw pointer, C's `T const*`.
+  `dataPtr()` is `const fn` and returns one (`dataPtrMut()` is the writable half), `cstr()` is
+  read-only, and `addr(of:)` on a const root hands one back. So an FFI wrapper that only reads takes
+  `const ref` all the way down, and const-correctness survives the crossing.
 - **Member visibility is per TYPE.** A non-`public` ctor or method is invisible even to a free function
-  in the same file; a helper ctor a free function fills has to be `public`. (Free functions and types
-  are per FILE — a different rule.)
+  in the same file. Do **not** reach for `public` to fix that — a `friend` grant names the exact
+  members one accessor may touch (`friend fill[blank, bytes];`), which is what keeps a raw accessor out
+  of the API. (Free functions and types are per FILE — a different rule.)
 - **Unwrapping a `Result`/`Optional` into a local:** a *value* payload copies out of a borrowing
   `match (r) { case Ok(value: x): x; … }`; a *resource* payload leaves a consuming
   `match (give r) { case Ok(value: x): give x; … }`. The subject must be a local — bind a call's result
   first — and a block arm that does not produce a value must `return`.
-- **`print(s: …)` / `println(s: …)`** — named like every other call.
+- **`println(s: …)`** is named and imported like any call: `import { core::println };` (also `args`, `envOr`).
 - **One way to do a thing.** Before adding a helper, `--search` for an existing one.
 
 ## Conventions
