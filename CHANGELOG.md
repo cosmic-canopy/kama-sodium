@@ -5,16 +5,22 @@ and this package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
-Onto kama's first public release. **The library is unchanged** — no file under `src/` or `csrc/` moved,
-so its floor stays kama ≥ 0.9.227 and there is nothing to release yet. Verified on kama 0.9.440 (the
-public release) and 0.9.451, native debug and release, plus the wasm leg on 0.9.451.
+## [0.5.0] — 2026-09-27
+
+The first version on the official registry, `registry.kama-lang.org`: `kama pkg add kama.json
+@kama/sodium --version ^0.5.0` needs no registry configuration. **The library is unchanged** — no file
+under `src/` or `csrc/` moved since 0.4.0 — so the minor bump is for the raised floor alone. Needs
+**kama ≥ 0.9.457**. Verified on kama 0.9.457, native debug and release, plus the wasm leg.
 
 ### Changed
 
-- `tests/` and `examples/udp_channel` import `println` from `core`, which kama 0.9.427 made mandatory,
-  and their manifests declare `"kama": ">=0.9.440"`.
-- CI installs the public `v0.9.440`; it pinned `v0.9.208`, which was never released.
-- `AGENTS.md` and `AGENTS.package.md` regenerated on kama 0.9.451.
+- The floor is **kama ≥ 0.9.457**, raised for the manifest rather than the source: `publish.exclude`
+  (new in kama 0.9.453, first released in 0.9.457) keeps the repository's agent files, CI, `tools/` and
+  `docs/` out of the published tarball, and an older compiler refuses that key outright. `tests/` and the
+  example declare the same.
+- `tests/` and `examples/udp_channel` import `println` from `core`, which kama 0.9.427 made mandatory.
+- CI installs the public `v0.9.457`; it pinned `v0.9.208`, which was never released.
+- `AGENTS.md`, `AGENTS.package.md` and the kama skill regenerated on kama 0.9.457.
 
 ### Removed
 

@@ -7,11 +7,18 @@ to edit.
 
 **Read [docs/ROADMAP.md](docs/ROADMAP.md) first.** It is the order of work and what this repo is still
 waiting on from the compiler, and [KAMA_GAPS.md](KAMA_GAPS.md) for the compiler gaps it has hit.
-The library needs **kama ≥ 0.9.227**, declared as `"kama"` in the manifest; `tests/` and the example
-declare **≥ 0.9.440** (the first public release), because they import `core::println`.
+The package needs **kama ≥ 0.9.457**, declared as `"kama"` in the manifest — not for its source, which
+still builds on 0.9.227, but for the manifest itself: `publish.exclude` (new in kama 0.9.453, first
+released in 0.9.457) is a key an older compiler refuses outright. `tests/` and the example declare the
+same, since they path-depend on the root manifest.
 
 What is true here and nowhere else, learned building it (the first external kama package):
 
+- **Publishing ships what git tracks, as committed, minus `publish.exclude`** in `kama.json` (the agent
+  files, CI, `tools/`, `docs/`). Commit first — publish refuses a dirty tree — and read
+  `kama publish kama.json --dry-run` before a real one: a version is permanent. The official registry
+  is `registry.kama-lang.org`, published through `../kama-registry` (`./ops publish
+  ../kama-sodium/kama.json`, which checks the package first); a consumer needs no registry config.
 - **Run `tools/test.sh`** (`KAMA=/path/to/kama` if `kama` is not on the PATH). It builds `tests/`
   debug and release and then the example; a failing case prints its name. Test vectors come from
   `third_party/libsodium/../test/default` in the upstream tarball — never type one from memory; the

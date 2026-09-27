@@ -6,12 +6,13 @@
 takes it as `KAMA=<path>`. Check `kama --version` before assuming any row below — every row names the
 compiler version it needs.
 
-## Where this is (2026-09-26)
+## Where this is (2026-09-27)
 
-`0.4.0`, built and tested on kama **0.9.451** (dev) and **0.9.440** — the first public release,
-2026-09-23, which installs to `~/.kama/bin/kama`. The library's declared floor is still `>=0.9.227`,
-because its source has not changed; `tests/` and the example declare `>=0.9.440` (row 10). Six
-modules, libsodium 1.0.20 vendored, every primitive proven against libsodium's own vectors.
+`0.5.0`, **on the official registry** (`registry.kama-lang.org` — a consumer writes
+`"@kama/sodium": { "version": "^0.5.0" }` and nothing else), built and tested on kama **0.9.457**. The
+declared floor is `>=0.9.457` — raised for the manifest's `publish.exclude`, which an older compiler
+refuses, not for the source, which has not changed since 0.4.0 and still builds on 0.9.227 (row 13).
+Six modules, libsodium 1.0.20 vendored, every primitive proven against libsodium's own vectors.
 
 **Nothing is blocked, and no gap is open.** Every gap this package filed has been fixed upstream — the
 `friend` pair in 0.9.227, the `addr(of:)` diagnostic in 0.9.229, and the stale agent guidance
@@ -29,17 +30,23 @@ kama `0.9.204`…`0.9.208` shipped four things this package asked for while it w
 | 0.9.207 | **file-private names are keyed per file** | the four `knownAnswer` helpers in `tests/src/` |
 | 0.9.208 | the `-Wl,-dead_strip` warning per translation unit is gone from `--release` | confirmed: a consumer's release build is quiet |
 
-## DONE — onto the launched compiler (unreleased; the library source is unchanged)
+## DONE — 0.5.0: onto the launched compiler and the official registry (the library source is unchanged)
 
 10. **`println` is imported from `core`** in `tests/` and `examples/udp_channel` — a bare `println` is
-    an error since kama 0.9.427 (KR-87). Those two manifests declare `"kama": ">=0.9.440"`: the import
-    exists from 0.9.426, but 0.9.440 is the oldest compiler they have actually been run on, and nothing
-    older was ever public. The library's own floor stays `>=0.9.227`, per `../cstar/docs/packages.md`:
-    raise it when the source starts to need more, and only then.
-11. **`AGENTS.md` and `AGENTS.package.md` regenerated on 0.9.451.** The three stale bullets are gone
-    upstream (KAMA_GAPS.md #4, fixed in 0.9.237), so the warning `AGENTS.sodium.md` carried against
-    them is deleted, along with two of its own bullets that had gone stale in 0.3.0/0.4.0.
-12. **CI pins the public release**, `KAMA_VERSION: v0.9.440`, which the installer can now resolve.
+    an error since kama 0.9.427 (KR-87).
+11. **`AGENTS.md`, `AGENTS.package.md` and the kama skill regenerated on 0.9.457.** The three stale
+    bullets are gone upstream (KAMA_GAPS.md #4, fixed in 0.9.237), so the warning `AGENTS.sodium.md`
+    carried against them is deleted, along with two of its own bullets that had gone stale in 0.3.0/0.4.0.
+    The skill had not been regenerated since 0.1.0 and taught `kama build src/app.kama`, a loose build.
+12. **CI pins the public release**, `KAMA_VERSION: v0.9.457`, which the installer resolves.
+13. **`publish.exclude` keeps the repository out of the package** — the agent files, CI, `tools/` and
+    `docs/` — since kama 0.9.452 publishes exactly the files git tracks. The key is new in 0.9.453 and an
+    older compiler refuses it (measured: 0.9.440 says `unknown key \`publish\``), so every manifest here
+    declares `>=0.9.457`, the first release carrying it — the rule in `../cstar/docs/packages.md`
+    § *What compiler a package needs*: a package that starts using a manifest key raises its floor to the
+    release that introduced it.
+14. **Published**: `@kama/sodium@0.5.0` through `../kama-registry` (`./ops publish`), the first package
+    on the official registry.
 
 ## DONE — the 0.4.0 arc
 
@@ -77,11 +84,8 @@ kama `0.9.204`…`0.9.208` shipped four things this package asked for while it w
 
 ## WAITING ON kama — do not work around these, check `kama --version`
 
-| this package's shape | what it is waiting for | where |
-|---|---|---|
-| `kama pkg add … --path ../kama-sodium` is how a consumer gets it; `kama publish --registry file:///…` is as far as publishing goes | the **hosted registry** for the `@kama` scope | `../cstar/docs/ROADMAP.md` LATER KR-27, *Registry — hosted deployment (M3.3)* — still open on 0.9.451 |
-
-That is the only row. Nothing else in this package is waiting on the compiler.
+Nothing. The last row — a consumer could only take this package by `--path`, because there was no
+hosted registry — closed with 0.5.0 on `registry.kama-lang.org`.
 
 ### Closed, and why they are NOT compiler rows
 
@@ -110,24 +114,18 @@ authority for the read-only direction, and a green build proves nothing about it
 fact for package authors — recorded in `AGENTS.md` — rather than something the compiler could fix without
 emitting prototypes it deliberately does not emit.
 
-## Before this can really be published
+## Publishing
 
-Publishing works today only against a `file://` registry — `kama publish kama.json --registry
-file:///tmp/kreg`, then a consumer with `"@kama/sodium": { "version": "^0.4.0", "registry": … }`. That
-round trip is proven for `0.4.0`: resolve, unpack, compile the vendored libsodium, link, run. Everything
-missing is host-side, in `../cstar`:
+`kama publish` ships the files git tracks, as committed, minus `publish.exclude`; commit first, and read
+`kama publish kama.json --dry-run` before a real one — a version is permanent. The official registry is
+published through `../kama-registry`: `./ops publish ../kama-sodium/kama.json` runs `kama check`, publishes
+into its `registry/` tree, runs the registry's own checks (integrity, write-once, `@kama/*` only,
+secret-shaped names) and commits; the push deploys it. What is still host-side, in `../cstar`:
 
-- **LATER KR-27 — hosted registry deployment (M3.3).** Everything below gates on a live host; the
-  protocol a host must serve is already specified in `../cstar/docs/packages.md`. The compiler itself
-  is public since 0.9.440, but `kama publish` still writes into a directory or `file://` URI.
-- **The `@kama` scope reserved.** Per `ROADMAP_DETAIL.md` §10, `@kama` and `@std` get reserved the day
-  M3.3's host exists — the scope is the mark and the channel, so this package's name is not really
-  claimed until then.
-- **The trust model, in two steps and already decided** (§10, following where Go, PyPI, npm and crates.io
-  landed rather than per-developer PGP): first an **allowed-signers set** — real `ssh-keygen -Y verify`
-  against a configured trust set, plus closing the warm-store and git-dependency gaps; then **CI/OIDC
-  provenance in a transparency log**, at which point `--verify` stops being opt-in. Mandatory verification
-  is meaningless before a live registry, which is why it is sequenced behind the host and not before it.
+- **The trust model, in two steps and already decided** (KR-27, following where Go, PyPI, npm and
+  crates.io landed rather than per-developer PGP): first an **allowed-signers set** — real `ssh-keygen -Y
+  verify` against a configured trust set, plus closing the warm-store and git-dependency gaps; then
+  **CI/OIDC provenance in a transparency log**, at which point `--verify` stops being opt-in.
 - **A resolution-time compiler check.** The registry index does not carry a package's `"kama"` requirement
   yet, so resolution picks the highest satisfying *package* version and the compiler range is only checked
   at install. A consumer on an older compiler gets a refusal rather than an older-but-working version.
@@ -147,8 +145,8 @@ generalises still belongs upstream, in language a package that is not a libsodiu
 - `tools/vendor-libsodium.sh` to the next libsodium stable when it exists (bump `VERSION`/`SHA256`,
   run it; it owns `third_party/` and the `csources` block).
 - **See `.github/workflows/ci.yml` go green.** Both of its prerequisites exist now — this repo has a
-  GitHub remote, and kama 0.9.440 is a public release the installer resolves — and its pin names that
-  release. Until 2026-09-26 it pinned `v0.9.208`, which was never released, so no run before then can
+  GitHub remote, and kama is a public release the installer resolves — and its pin names one
+  (`v0.9.457`). Until 2026-09-26 it pinned `v0.9.208`, which was never released, so no run before then can
   have passed. It is the template the next kama package copies. A `windows-x64` release exists too; this
   package has not been built on Windows, so the matrix does not claim it.
 - **`tools/test-wasm.sh` on the public release.** Its default `KAMA` is still the peer dev build

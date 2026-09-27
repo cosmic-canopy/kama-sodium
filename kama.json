@@ -1,9 +1,15 @@
 {
   "name": "@kama/sodium",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "license": "MIT",
   "kind": "library",
-  "kama": ">=0.9.227",
+  "kama": ">=0.9.457",
+  "publish": {
+    "exclude": [
+      ".claude/", ".github/", "tools/", "docs/",
+      "AGENTS.md", "AGENTS.package.md", "AGENTS.sodium.md", "CLAUDE.md", "KAMA_GAPS.md"
+    ]
+  },
   "modules": {
     ".":         { "visibility": "public" },
     "secretbox": { "visibility": "public" },
