@@ -5,6 +5,14 @@ and this package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-09-30
+
+### Changed
+
+- **Licensed under MIT OR Apache-2.0**, at your option, like kama itself — it was MIT only. Copyright is
+  Cosmic Canopy LLC and the kama contributors. **The library is unchanged**: no file under `src/` or `csrc/`
+  moved, so the patch bump is for the license alone; 0.5.0 as published stays MIT. libsodium stays ISC.
+
 ## [0.5.0] — 2026-09-27
 
 The first version on the official registry, `registry.kama-lang.org`: `kama pkg add kama.json

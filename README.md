@@ -116,4 +116,16 @@ could not run there at all. Same source, same define list, entropy from the web 
 
 ## License
 
-MIT (this package). libsodium is ISC; its notice is at `third_party/libsodium/LICENSE`.
+`@kama/sodium` is licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option. The vendored libsodium is ISC; its notice is at `third_party/libsodium/LICENSE`, and a program
+that ships libsodium carries it.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in
+`@kama/sodium` by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any
+additional terms or conditions.
