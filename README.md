@@ -13,9 +13,9 @@ Needs **kama ≥ 0.9.457** — declared as `"kama": ">=0.9.457"` in the manifest
 
 ```kama
 import { sodium::Nonce, sodium::aead::Key, sodium::aead::seal, sodium::aead::open,
-         std::collections::FixedArray };
+         std::collections::ConstView, std::collections::FixedArray };
 
-unsafe fn void demo(View<uint8> packetHeader, View<uint8> payload) {
+unsafe fn void demo(ConstView<uint8> packetHeader, ConstView<uint8> payload) {
     Key key = Key.random();                         // move-only; zeroed when dropped
     Nonce nonce = Nonce.random();                   // 24 bytes: random per message is safe
     FixedArray<uint8> sealed = seal(message: payload, ad: packetHeader, nonce: nonce, key: key);

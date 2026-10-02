@@ -5,13 +5,22 @@ and this package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
-## [0.5.1] — 2026-09-30
+## [0.5.1] — 2026-10-02
+
+**The library is unchanged**: no file under `src/` or `csrc/` moved since 0.4.0. The patch bump is for
+the license and a README fix. Verified on kama 0.9.486 (the latest release) and 0.9.519.
 
 ### Changed
 
 - **Licensed under MIT OR Apache-2.0**, at your option, like kama itself — it was MIT only. Copyright is
-  Cosmic Canopy LLC and the kama contributors. **The library is unchanged**: no file under `src/` or `csrc/`
-  moved, so the patch bump is for the license alone; 0.5.0 as published stays MIT. libsodium stays ISC.
+  Cosmic Canopy LLC and the kama contributors. 0.5.0 as published stays MIT. libsodium stays ISC.
+  (Committed 2026-09-30, published with this version.)
+
+### Fixed
+
+- **The README's sample did not compile**: it named `View` without importing it, which kama refuses.
+  It now imports `ConstView` and takes its two read-only inputs as `ConstView<uint8>`, as the README's
+  own rule says. Built against the published `0.5.0`.
 
 ## [0.5.0] — 2026-09-27
 

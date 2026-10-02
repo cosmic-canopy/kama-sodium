@@ -6,10 +6,12 @@
 takes it as `KAMA=<path>`. Check `kama --version` before assuming any row below — every row names the
 compiler version it needs.
 
-## Where this is (2026-09-27)
+## Where this is (2026-10-02)
 
-`0.5.0`, **on the official registry** (`registry.kama-lang.org` — a consumer writes
-`"@kama/sodium": { "version": "^0.5.0" }` and nothing else), built and tested on kama **0.9.457**. The
+`0.5.1` is **on the official registry** (`registry.kama-lang.org` — a consumer writes
+`"@kama/sodium": { "version": "^0.5.0" }` and nothing else): the MIT OR Apache-2.0 license and a README
+sample that compiles, over the same library as `0.5.0`. Built and tested on kama **0.9.519** (dev;
+native and wasm) and **0.9.486**, the latest release (native), and published with `0.9.486`. The
 declared floor is `>=0.9.457` — raised for the manifest's `publish.exclude`, which an older compiler
 refuses, not for the source, which has not changed since 0.4.0 and still builds on 0.9.227 (row 13).
 Six modules, libsodium 1.0.20 vendored, every primitive proven against libsodium's own vectors.
