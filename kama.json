@@ -1,9 +1,12 @@
 {
   "name": "@kama/sodium",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "license": "MIT OR Apache-2.0",
+  "description": "Authenticated encryption, signatures and key exchange: secretbox, XChaCha20-Poly1305 AEAD, sealed boxes, Ed25519, X25519. libsodium 1.0.20, vendored and built from source",
+  "repository": "https://github.com/cosmic-canopy/kama-sodium",
+  "keywords": ["crypto", "libsodium", "encryption", "nacl", "ed25519"],
   "kind": "library",
-  "kama": ">=0.9.457",
+  "kama": ">=0.9.523",
   "publish": {
     "exclude": [
       ".claude/", ".github/", "tools/", "docs/",

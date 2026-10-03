@@ -5,6 +5,23 @@ and this package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-03
+
+What the registry shows about this package. **The library is unchanged** — no file under `src/` or `csrc/`
+moved since 0.4.0 — so the minor bump is the raised floor alone, per this package's convention, and a
+consumer on `^0.5.0` stays on 0.5.1. Verified on kama 0.9.523, native and wasm.
+
+### Added
+
+- `description`, `repository` and `keywords` in the manifest. kama copies them, with `license`, into this
+  version's registry index entry and the registry's catalog — what `kama pkg search` and the pages at
+  `registry.kama-lang.org` show.
+
+### Changed
+
+- **Minimum compiler is kama 0.9.523**, the first that reads those keys; an older one refuses the manifest
+  and says to update. `tests/` and the example declare the same, since they path-depend on it.
+
 ## [0.5.1] — 2026-10-02
 
 **The library is unchanged**: no file under `src/` or `csrc/` moved since 0.4.0. The patch bump is for

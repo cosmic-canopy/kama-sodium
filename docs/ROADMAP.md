@@ -6,14 +6,15 @@
 takes it as `KAMA=<path>`. Check `kama --version` before assuming any row below — every row names the
 compiler version it needs.
 
-## Where this is (2026-10-02)
+## Where this is (2026-10-03)
 
-`0.5.1` is **on the official registry** (`registry.kama-lang.org` — a consumer writes
-`"@kama/sodium": { "version": "^0.5.0" }` and nothing else): the MIT OR Apache-2.0 license and a README
-sample that compiles, over the same library as `0.5.0`. Built and tested on kama **0.9.519** (dev;
-native and wasm) and **0.9.486**, the latest release (native), and published with `0.9.486`. The
-declared floor is `>=0.9.457` — raised for the manifest's `publish.exclude`, which an older compiler
-refuses, not for the source, which has not changed since 0.4.0 and still builds on 0.9.227 (row 13).
+`0.6.0` is **on the official registry** (`registry.kama-lang.org` — a consumer writes
+`"@kama/sodium": { "version": "^0.6.0" }` and nothing else), and it is the first version that says what it
+is there: `description`, `repository` and `keywords`, in its index entry and in the catalog that
+`kama pkg search` and the registry's pages read. The library is the same as `0.5.0`. The declared floor is
+`>=0.9.523` — raised for the manifest's keys, which an older compiler refuses, not for the source, which
+has not changed since 0.4.0 and still builds on 0.9.227 (rows 13, 16). Built and tested on kama
+**0.9.523**, the latest release (native; wasm on the same-version dev build), and published with it.
 Six modules, libsodium 1.0.20 vendored, every primitive proven against libsodium's own vectors.
 
 **Nothing is blocked, and no gap is open.** Every gap this package filed has been fixed upstream — the
@@ -31,6 +32,18 @@ kama `0.9.204`…`0.9.208` shipped four things this package asked for while it w
 | 0.9.206 | the **`"kama"` manifest key** — the compiler range a package needs | this package declares `>=0.9.227` |
 | 0.9.207 | **file-private names are keyed per file** | the four `knownAnswer` helpers in `tests/src/` |
 | 0.9.208 | the `-Wl,-dead_strip` warning per translation unit is gone from `--release` | confirmed: a consumer's release build is quiet |
+
+## DONE — 0.6.0: what the registry shows (the library source is unchanged)
+
+15. **`description`, `repository` and `keywords`** in `kama.json` (kama 0.9.523), so the registry's
+    catalog, its page for this package and `kama pkg search crypto` say what it is. An index entry is
+    write-once, so `0.5.1` shows none of them and never will; they arrive with this version.
+16. **The floor is `>=0.9.523`** in all three manifests, and CI pins `v0.9.523`. A minor bump, not a
+    patch, on purpose: the registry index does not carry `"kama"` yet, so a `0.5.2` would have reached
+    every `^0.5.0` consumer and been refused at install on an older compiler.
+17. **The release steps in `AGENTS.sodium.md` end with the tag** — an annotated `vX.Y.Z` on the published
+    commit, pushed, because a git dependency's version range resolves tags. `v0.5.1` was missed until
+    asked about.
 
 ## DONE — 0.5.0: onto the launched compiler and the official registry (the library source is unchanged)
 
@@ -148,7 +161,7 @@ generalises still belongs upstream, in language a package that is not a libsodiu
   run it; it owns `third_party/` and the `csources` block).
 - **See `.github/workflows/ci.yml` go green.** Both of its prerequisites exist now — this repo has a
   GitHub remote, and kama is a public release the installer resolves — and its pin names one
-  (`v0.9.457`). Until 2026-09-26 it pinned `v0.9.208`, which was never released, so no run before then can
+  (`v0.9.523`). Until 2026-09-26 it pinned `v0.9.208`, which was never released, so no run before then can
   have passed. It is the template the next kama package copies. A `windows-x64` release exists too; this
   package has not been built on Windows, so the matrix does not claim it.
 - **`tools/test-wasm.sh` on the public release.** Its default `KAMA` is still the peer dev build

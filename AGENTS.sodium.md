@@ -7,10 +7,11 @@ to edit.
 
 **Read [docs/ROADMAP.md](docs/ROADMAP.md) first.** It is the order of work and what this repo is still
 waiting on from the compiler, and [KAMA_GAPS.md](KAMA_GAPS.md) for the compiler gaps it has hit.
-The package needs **kama ≥ 0.9.457**, declared as `"kama"` in the manifest — not for its source, which
-still builds on 0.9.227, but for the manifest itself: `publish.exclude` (new in kama 0.9.453, first
-released in 0.9.457) is a key an older compiler refuses outright. `tests/` and the example declare the
-same, since they path-depend on the root manifest.
+The package needs **kama ≥ 0.9.523**, declared as `"kama"` in the manifest — not for its source, which
+still builds on 0.9.227, but for the manifest itself: `publish.exclude` (0.9.453) and the registry's
+`description`, `repository` and `keywords` (0.9.523) are keys an older compiler refuses outright, and
+`kama publish` refuses a key newer than the floor. `tests/` and the example declare the same, since they
+path-depend on the root manifest.
 
 What is true here and nowhere else, learned building it (the first external kama package):
 
@@ -18,7 +19,14 @@ What is true here and nowhere else, learned building it (the first external kama
   files, CI, `tools/`, `docs/`). Commit first — publish refuses a dirty tree — and read
   `kama publish kama.json --dry-run` before a real one: a version is permanent. The official registry
   is `registry.kama-lang.org`, published through `../kama-registry` (`./ops publish
-  ../kama-sodium/kama.json`, which checks the package first); a consumer needs no registry config.
+  ../kama-sodium/kama.json`, which checks the package first, then `git push` there to deploy the index);
+  a consumer needs no registry config. A release ends with an annotated `vX.Y.Z` tag on the published
+  commit, pushed — a git dependency's `"version"` range resolves tags, so an untagged release is
+  invisible to it. `description`, `repository` and `keywords` in `kama.json` are copied into each
+  version's index entry and the registry's catalog, which its pages and `kama pkg search` read; an
+  entry is write-once, so changing them means publishing a version. A floor raise is a minor bump:
+  the index does not carry `"kama"` yet, so a patch would reach every `^0.x.y` consumer and be refused
+  at install on an older compiler.
 - **Run `tools/test.sh`** (`KAMA=/path/to/kama` if `kama` is not on the PATH). It builds `tests/`
   debug and release and then the example; a failing case prints its name. Test vectors come from
   `third_party/libsodium/../test/default` in the upstream tarball — never type one from memory; the

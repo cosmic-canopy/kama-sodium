@@ -4,9 +4,9 @@ Found while making the first external kama package production-ready. Each one is
 smallest program that shows it, and each was **run** on the version named — none is inferred from
 reading the spec.
 
-**Current compiler:** `kama 0.9.519+g28136440` (a dev build at `../cstar/out/Darwin-arm64/kama`), and
-the latest release `0.9.486`. `tools/test.sh` is green on both; `tools/test-wasm.sh` on `0.9.519`.
-Nothing this package filed is open, so the 0.9.452–0.9.519 fixes had nothing here to close; the
+**Current compiler:** `kama 0.9.523`, the latest release; the dev build at `../cstar/out/<os>-<arch>/kama`
+is the same version (`+gf8212db3`). `tools/test.sh` is green on the release; `tools/test-wasm.sh` on the
+dev build. Nothing this package filed is open, so the 0.9.452–0.9.523 fixes had nothing here to close; the
 `KPG-*` series in the compiler's log is `../kama-postgres`'s.
 **Reporter:** the `@kama/sodium` repo — every item is something this package hit naturally while
 trying to write the code the obvious way, not something contrived to break the compiler.

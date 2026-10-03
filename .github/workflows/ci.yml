@@ -39,13 +39,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Every manifest here declares `"kama": ">=0.9.457"`: the root's `publish` key is unreadable to an
-      # older compiler, and tests/ and the example path-depend on the root. Pinning KAMA_VERSION here
-      # rather than taking `latest` keeps a compiler release from turning this repository red without a
-      # commit; raise it deliberately, the same way a manifest floor is raised.
+      # Every manifest here declares `"kama": ">=0.9.523"`: the root's `publish` and registry metadata
+      # keys are unreadable to an older compiler, and tests/ and the example path-depend on the root.
+      # Pinning KAMA_VERSION here rather than taking `latest` keeps a compiler release from turning this
+      # repository red without a commit; raise it deliberately, the same way a manifest floor is raised.
       - name: Install kama
         env:
-          KAMA_VERSION: v0.9.457
+          KAMA_VERSION: v0.9.523
         run: |
           curl -fsSL https://kama-lang.org/install.sh | sh
           echo "$HOME/.kama/bin" >> "$GITHUB_PATH"

@@ -5,10 +5,10 @@ and the worked example of what one looks like. A binding, not a cryptography lib
 is libsodium's, and what this package adds is the types that make misuse a compile error.
 
 ```sh
-kama pkg add kama.json @kama/sodium --version ^0.5.0     # from the official registry, registry.kama-lang.org
+kama pkg add kama.json @kama/sodium --version ^0.6.0     # from the official registry, registry.kama-lang.org
 ```
 
-Needs **kama ≥ 0.9.457** — declared as `"kama": ">=0.9.457"` in the manifest, so `kama pkg install` and
+Needs **kama ≥ 0.9.523** — declared as `"kama": ">=0.9.523"` in the manifest, so `kama pkg install` and
 `kama build` both refuse an older compiler by name rather than failing somewhere inside the source.
 
 ```kama
@@ -103,7 +103,7 @@ builds and runs `examples/udp_channel`. Round trips; a flipped byte, the wrong k
 altered associated data are `Forged`; short inputs are `BadLength`; the `into` forms match the allocating
 ones; empty messages; seeded pairs are deterministic; and a known-answer vector per primitive from
 libsodium's own `test/default/` (RFC 8032 for Ed25519), extracted from the vendored tarball by script.
-Both programs declare kama ≥ 0.9.457, the package's own floor.
+Both programs declare kama ≥ 0.9.523, the package's own floor.
 
 `tools/test-wasm.sh` runs the same two programs built for wasm under node, in a container with emcc.
 That is the leg vendoring buys: there is no system libsodium for wasm, so a package linking `-lsodium`
